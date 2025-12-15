@@ -120,4 +120,3 @@ export const RevokeDocumentModal: React.FC<RevokeDocumentModalProps> = ({
     </LegalModalFrame>
   );
 };
-

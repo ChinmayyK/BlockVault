@@ -62,3 +62,4 @@ export const RedactionProgress: FC<RedactionProgressProps> = ({ stage }) => {
         </div>
     );
 };
+

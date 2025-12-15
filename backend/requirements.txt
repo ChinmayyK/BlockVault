@@ -109,3 +109,4 @@ flask-socketio>=5.3.0
 
 # Production Observability
 sentry-sdk[flask]>=1.40.0
+

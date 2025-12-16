@@ -342,3 +342,4 @@ export function getRedactionSummary(matches: RedactionMatch[]): {
     uniqueEntities,
   };
 }
+

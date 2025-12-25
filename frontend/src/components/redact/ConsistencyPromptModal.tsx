@@ -62,3 +62,4 @@ export function ConsistencyPromptModal({ group, onRedactAll, onReviewMatches, on
     </LegalModalFrame>
   );
 }
+

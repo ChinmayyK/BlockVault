@@ -105,3 +105,4 @@ def reject_nosql_operators(data: Any, depth: int = 0) -> None:
     elif isinstance(data, list):
         for item in data:
             reject_nosql_operators(item, depth + 1)
+

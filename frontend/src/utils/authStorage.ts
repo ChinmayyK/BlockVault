@@ -45,4 +45,3 @@ export const clearStoredUser = () => {
   window.localStorage.removeItem(AUTH_STORAGE_KEY);
   emitAuthChange();
 };
-

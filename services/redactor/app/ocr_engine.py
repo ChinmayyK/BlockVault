@@ -130,3 +130,4 @@ class PaddleOCREngine:
         except Exception as e:
             logger.error("PaddleOCR extraction failed: %s", e)
             return []
+

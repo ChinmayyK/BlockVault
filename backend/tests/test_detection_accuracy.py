@@ -311,3 +311,4 @@ class TestDetectionAccuracy:
 
         # Aggregate F1 should be at least 0.4 with regex-only
         assert metrics["f1"] >= 0.40, f"Overall F1 too low: {metrics['f1']}"
+

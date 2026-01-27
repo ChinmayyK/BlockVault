@@ -30,3 +30,4 @@ export interface TimelineEvent {
   /** Action type identifier, e.g. "view_proof", "view_tx", "view_report", "open_certificate" */
   actionType?: string;
 }
+

@@ -135,3 +135,4 @@ export const canManageTeam = (role?: UserRole): boolean => {
   const userRole = role || getUserRole();
   return userRole === 'lead-attorney';
 };
+

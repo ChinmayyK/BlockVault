@@ -56,4 +56,3 @@ export const useCommonShortcuts = (callbacks: {
 
   useKeyboardShortcuts(shortcuts);
 };
-

@@ -188,3 +188,4 @@ def _serialize_version(doc: Dict[str, Any]) -> Dict[str, Any]:
         "createdBy": doc.get("created_by", ""),
         "createdAt": doc.get("created_at"),
     }
+

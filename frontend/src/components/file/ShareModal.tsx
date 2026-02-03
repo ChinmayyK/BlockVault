@@ -599,3 +599,4 @@ export const ShareModal: React.FC<ShareModalProps> = ({ fileId, onClose }) => {
     </LegalModalFrame>
   );
 };
+

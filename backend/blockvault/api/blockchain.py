@@ -329,4 +329,3 @@ def get_stats():
             "gasUsed": 0,
             "lastActivity": datetime.now().isoformat()
         }), 500
-

@@ -180,3 +180,4 @@ export const WalletConnection: React.FC<WalletConnectionProps> = ({ onConnect })
     </div>
   );
 };
+

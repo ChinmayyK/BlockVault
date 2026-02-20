@@ -52,3 +52,4 @@ export const RedactionModal: React.FC<RedactionModalProps> = ({ document, onClos
     </LegalModalFrame>
   );
 };
+

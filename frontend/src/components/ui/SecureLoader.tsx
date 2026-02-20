@@ -25,3 +25,4 @@ export const SecureLoader: FC<{ className?: string, size?: number }> = ({ classN
         </div>
     );
 };
+

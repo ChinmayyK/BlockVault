@@ -184,9 +184,23 @@ def create_app() -> Flask:
         return r
 
     @app.get("/debug/files")
-    def debug_files():  # simple dev aid
+    def debug_files():  # ADMIN-only dev aid
+        from .core.security import verify_jwt, Role
+        auth_header = __import__('flask').request.headers.get("Authorization", "")
+        if not auth_header.startswith("Bearer "):
+            return {"error": "auth required"}, 401
         try:
-            from .core.db import get_db
+            decoded = verify_jwt(auth_header.removeprefix("Bearer ").strip())
+        except Exception:
+            return {"error": "invalid token"}, 401
+        # Check admin role
+        from .core.db import get_db
+        addr = decoded.get("sub", "").lower()
+        user_doc = get_db()["users"].find_one({"address": addr})
+        user_role = int(user_doc.get("role", Role.USER)) if user_doc else Role.USER
+        if user_role < Role.ADMIN:
+            return {"error": "admin role required"}, 403
+        try:
             coll = get_db()["files"]
             docs = []
             for d in coll.find({}):

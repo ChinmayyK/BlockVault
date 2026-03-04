@@ -12,7 +12,7 @@ from flask import Blueprint, request, abort, send_file, current_app
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding
 
-from ..core.security import require_auth
+from ..core.security import require_auth, Role, require_role
 from ..core.db import get_db
 from ..core.crypto_client import (
     encrypt_data as crypto_encrypt,
@@ -24,13 +24,13 @@ from ..core import s3 as s3_mod
 from ..core import ipfs as ipfs_mod
 from ..core import onchain as onchain_mod
 
-# Simplified role constants (on-chain RBAC removed)
-class Role:
-    VIEWER = 1
-    OWNER = 2
-    ADMIN = 3
 
-def ensure_role(_min_role: int):  # no-op: all authenticated users act as owners
+def ensure_role(min_role: int) -> bool:
+    """Enforce minimum role — delegates to request.role set by require_auth."""
+    from flask import request as _req, abort as _abort
+    user_role: int = getattr(_req, "role", 0)
+    if user_role < min_role:
+        _abort(403, "insufficient role")
     return True
 
 bp = Blueprint("files", __name__)
@@ -214,11 +214,10 @@ def upload_file():  # type: ignore
 
     # Enqueue background tasks (non-blocking)
     try:
-        from ..core.tasks import pin_to_ipfs, anchor_on_chain
+        from ..core.tasks import pin_to_ipfs
         pin_to_ipfs.delay(file_id_str)
-        anchor_on_chain.delay(file_id_str)
     except Exception as exc:
-        current_app.logger.warning("Failed to enqueue background tasks: %s", exc)
+        current_app.logger.warning("Failed to enqueue IPFS task: %s", exc)
 
     return {
         "file_id": file_id_str,
@@ -261,6 +260,7 @@ def file_status(file_id: str):  # type: ignore
         "cid": rec.get("cid"),
         "gateway_url": ipfs_mod.gateway_url(rec["cid"]) if rec.get("cid") else None,
         "anchor_tx": rec.get("anchor_tx"),
+        "merkle_root": rec.get("merkle_root"),
     }
 
 
@@ -502,7 +502,7 @@ def list_folders():  # type: ignore
 @require_auth
 def verify_file(file_id: str):  # type: ignore
     ensure_role(Role.OWNER)
-    owner = getattr(request, "address").lower()  # Normalize to lowercase
+    owner = getattr(request, "address").lower()
     oid = file_id
     try:
         from bson import ObjectId  # type: ignore
@@ -511,7 +511,6 @@ def verify_file(file_id: str):  # type: ignore
         pass
     rec = _files_collection().find_one({"_id": oid, "owner": owner})
     if not rec:
-        # Debug assist: if a record exists with that id but different owner, indicate mismatch (only when explicitly requested)
         dbg = request.args.get("debug")
         if dbg == "1":
             any_rec = _files_collection().find_one({"_id": oid})
@@ -519,14 +518,26 @@ def verify_file(file_id: str):  # type: ignore
                 abort(404, "file not found (ownership mismatch)")
         abort(404, "file not found")
     blob_present = s3_mod.blob_exists(rec["enc_filename"])
-    if request.headers.get('X-Debug-Files') == '1':
-        print(f"[DEBUG] verify_file owner={owner} id={file_id} blob_present={blob_present}")
+
+    # Merkle proof verification
+    merkle_valid = None
+    merkle_root = rec.get("merkle_root")
+    merkle_proof = rec.get("merkle_proof")
+    sha256 = rec.get("sha256")
+    if merkle_root and merkle_proof and sha256:
+        from ..core.merkle import verify_proof
+        merkle_valid = verify_proof(sha256, merkle_proof, merkle_root)
+
     result = {
         "file_id": file_id,
         "has_encrypted_blob": blob_present,
         "cid": rec.get("cid"),
-        "sha256": rec.get("sha256"),
+        "sha256": sha256,
         "presigned_url": s3_mod.generate_presigned_url(rec["enc_filename"]) if blob_present else None,
+        "anchor_tx": rec.get("anchor_tx"),
+        "merkle_root": merkle_root,
+        "merkle_proof": merkle_proof,
+        "merkle_valid": merkle_valid,
     }
     return result
 

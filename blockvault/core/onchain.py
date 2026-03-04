@@ -33,7 +33,17 @@ FILE_REGISTRY_ABI = [
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function",
-    }
+    },
+    {
+        "inputs": [
+            {"internalType": "bytes32", "name": "merkleRoot", "type": "bytes32"},
+            {"internalType": "uint256", "name": "fileCount", "type": "uint256"},
+        ],
+        "name": "anchorBatch",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function",
+    },
 ]
 
 
@@ -58,7 +68,7 @@ def _w3() -> Optional[Any]:  # pragma: no cover - simple accessor
 
 
 def anchor_file(hash_hex: str, size: int, cid: Optional[str]) -> Optional[str]:
-    """Anchor file metadata on-chain.
+    """Anchor file metadata on-chain (legacy per-file mode).
 
     Returns transaction hash (hex) or a simulated hash when disabled.
     """
@@ -94,4 +104,45 @@ def anchor_file(hash_hex: str, size: int, cid: Optional[str]) -> Optional[str]:
         return receipt_hash
     except Exception as e:
         logger.warning("anchor_file failed: %s", e)
+        return None
+
+
+def anchor_merkle_root(root_hex: str, file_count: int) -> Optional[str]:
+    """Anchor a Merkle root on-chain (batch mode).
+
+    Calls ``FileRegistry.anchorBatch(bytes32, uint256)`` with the root
+    hash and the number of files in the batch.
+
+    Returns transaction hash (hex) or a simulated hash when disabled.
+    """
+    if not root_hex or len(root_hex) != 64:
+        logger.debug("anchor_merkle_root: invalid root %s", root_hex)
+        return None
+    if not enabled():
+        pseudo = f"simulated::merkle::{root_hex[:16]}::{file_count}"
+        return pseudo
+    try:
+        w3 = _w3()
+        if w3 is None:
+            return None
+        acct = w3.eth.account.from_key(current_app.config.get("ETH_PRIVATE_KEY"))  # type: ignore
+        contract_addr = current_app.config.get("FILE_REGISTRY_ADDRESS")
+        contract = w3.eth.contract(address=Web3.to_checksum_address(contract_addr), abi=FILE_REGISTRY_ABI)  # type: ignore
+        root_bytes = bytes.fromhex(root_hex)
+        nonce = w3.eth.get_transaction_count(acct.address)
+        txn = contract.functions.anchorBatch(root_bytes, file_count).build_transaction({
+            "from": acct.address,
+            "nonce": nonce,
+            "gas": 180000,
+            "maxFeePerGas": w3.to_wei('30', 'gwei'),
+            "maxPriorityFeePerGas": w3.to_wei('1', 'gwei'),
+            "chainId": w3.eth.chain_id,
+        })
+        signed = acct.sign_transaction(txn)
+        tx_hash = w3.eth.send_raw_transaction(signed.rawTransaction)
+        receipt_hash = tx_hash.hex()
+        logger.info("Anchored Merkle root=%s file_count=%s tx=%s", root_hex, file_count, receipt_hash)
+        return receipt_hash
+    except Exception as e:
+        logger.warning("anchor_merkle_root failed: %s", e)
         return None

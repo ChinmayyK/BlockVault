@@ -1,6 +1,6 @@
-"""Background tasks for IPFS pinning and blockchain anchoring.
+"""Background tasks for IPFS pinning and Merkle-batched blockchain anchoring.
 
-Each task is self-contained: it fetches the file record from MongoDB,
+Each task is self-contained: it fetches records from MongoDB,
 performs the I/O-heavy operation, and writes the result back.  A
 minimal Flask application context is created so that modules like
 ``ipfs`` and ``onchain`` (which depend on ``current_app.config``) work
@@ -9,7 +9,7 @@ outside the request cycle.
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from .celery_app import celery
 
@@ -25,9 +25,7 @@ def _make_app():
     available inside Celery workers.  The app is cached on the module to
     avoid re-init on every task invocation.
     """
-    # Import late to avoid circular imports at module load time.
     from blockvault import create_app  # noqa: WPS433
-
     return create_app()
 
 
@@ -47,7 +45,7 @@ def _files_collection():
 
 
 # ---------------------------------------------------------------------------
-# Tasks
+# IPFS pinning (per-file, enqueued on upload)
 # ---------------------------------------------------------------------------
 
 @celery.task(bind=True, max_retries=3, default_retry_delay=30)
@@ -64,7 +62,6 @@ def pin_to_ipfs(self: Any, file_id: str) -> Dict[str, Any]:
 
         coll = _files_collection()
 
-        # Resolve file_id (may be ObjectId string)
         rec = _find_record(coll, file_id)
         if rec is None:
             logger.error("pin_to_ipfs: file %s not found", file_id)
@@ -103,47 +100,87 @@ def pin_to_ipfs(self: Any, file_id: str) -> Dict[str, Any]:
         return {"file_id": file_id, "ipfs_status": "complete", "cid": cid}
 
 
-@celery.task(bind=True, max_retries=3, default_retry_delay=30)
-def anchor_on_chain(self: Any, file_id: str) -> Dict[str, Any]:
-    """Anchor the file's SHA-256 hash on-chain.
+# ---------------------------------------------------------------------------
+# Merkle-batched blockchain anchoring (periodic)
+# ---------------------------------------------------------------------------
 
-    Updates the MongoDB record with ``anchor_tx`` and ``anchor_status``
-    (``"complete"`` or ``"failed"``).
+@celery.task(bind=True, max_retries=2, default_retry_delay=60)
+def batch_anchor(self: Any) -> Dict[str, Any]:
+    """Collect all unanchored file hashes, build a Merkle tree, and
+    anchor the root on-chain.
+
+    Each file record is updated with:
+      - ``merkle_root``   — hex root of the batch tree
+      - ``merkle_proof``  — list of {hash, position} inclusion proof steps
+      - ``anchor_tx``     — on-chain transaction hash
+      - ``anchor_status`` — "complete" or "failed"
+
+    Runs as a Celery Beat periodic task (default: daily).
     """
     app = _get_app()
     with app.app_context():
         from blockvault.core import onchain as onchain_mod  # noqa: WPS433
+        from blockvault.core.merkle import MerkleTree  # noqa: WPS433
 
         coll = _files_collection()
-        rec = _find_record(coll, file_id)
-        if rec is None:
-            logger.error("anchor_on_chain: file %s not found", file_id)
-            return {"file_id": file_id, "anchor_status": "failed", "error": "not found"}
 
-        sha256 = rec.get("sha256")
-        size = rec.get("size")
-        cid = rec.get("cid")  # may still be None if IPFS task hasn't finished
+        # Gather all files waiting for anchoring
+        pending = list(coll.find({"anchor_status": "pending", "sha256": {"$ne": None}}))
+        if not pending:
+            logger.info("batch_anchor: no pending files")
+            return {"anchored": 0}
 
-        if not sha256:
-            _set_status(coll, rec, "anchor_status", "failed")
-            return {"file_id": file_id, "anchor_status": "failed", "error": "no sha256"}
+        # De-duplicate sha256 values while preserving file list
+        leaf_hashes: List[str] = []
+        seen: set[str] = set()
+        for rec in pending:
+            h = rec["sha256"]
+            if h not in seen:
+                leaf_hashes.append(h)
+                seen.add(h)
 
+        # Single-leaf edge case: Merkle tree still works (root == leaf)
+        tree = MerkleTree.build(leaf_hashes)
+        merkle_root = tree.root
+
+        # Anchor the Merkle root on-chain (single transaction for entire batch)
         try:
-            anchor_tx = onchain_mod.anchor_file(sha256, size, cid)
+            anchor_tx = onchain_mod.anchor_merkle_root(merkle_root, len(pending))
         except Exception as exc:
-            logger.warning("anchor_on_chain: failed for %s: %s", file_id, exc)
+            logger.warning("batch_anchor: on-chain anchor failed: %s", exc)
             try:
                 raise self.retry(exc=exc)
             except self.MaxRetriesExceededError:
-                _set_status(coll, rec, "anchor_status", "failed")
-                return {"file_id": file_id, "anchor_status": "failed", "error": str(exc)}
+                # Mark all as failed
+                ids = [r["_id"] for r in pending]
+                coll.update_many(
+                    {"_id": {"$in": ids}},
+                    {"$set": {"anchor_status": "failed"}},
+                )
+                return {"anchored": 0, "error": str(exc)}
 
-        coll.update_one(
-            {"_id": rec["_id"]},
-            {"$set": {"anchor_tx": anchor_tx, "anchor_status": "complete"}},
+        # Update each file record with its proof
+        for rec in pending:
+            sha = rec["sha256"]
+            try:
+                proof = tree.proof_dicts(sha)
+            except ValueError:
+                proof = []
+            coll.update_one(
+                {"_id": rec["_id"]},
+                {"$set": {
+                    "merkle_root": merkle_root,
+                    "merkle_proof": proof,
+                    "anchor_tx": anchor_tx,
+                    "anchor_status": "complete",
+                }},
+            )
+
+        logger.info(
+            "batch_anchor: anchored %d files, root=%s, tx=%s",
+            len(pending), merkle_root, anchor_tx,
         )
-        logger.info("anchor_on_chain: file %s anchored tx=%s", file_id, anchor_tx)
-        return {"file_id": file_id, "anchor_status": "complete", "anchor_tx": anchor_tx}
+        return {"anchored": len(pending), "merkle_root": merkle_root, "anchor_tx": anchor_tx}
 
 
 # ---------------------------------------------------------------------------

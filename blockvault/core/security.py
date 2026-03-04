@@ -1,35 +1,48 @@
-from __future__ import annotations
-import time
-import jwt
-from flask import current_app, request, abort
-from functools import wraps
-from typing import Any, Dict, Callable, TypeVar, cast
+"""Security utilities: JWT auth, role resolution, and access decorators.
 
-"""Simplified security utilities (on-chain RBAC removed).
+Roles are stored in the MongoDB ``users`` collection under the ``role``
+field.  If a user has no role field they default to ``USER``.
 
-Previously the system attached dynamic roles (viewer/owner/admin) resolved via
-an on-chain RoleRegistry contract. All that logic has been removed for the
-off‑chain edition. For now, every authenticated address is implicitly treated
-as an OWNER for file operations; selective sharing still governs access to
-non-owned files via explicit share records.
-
-If you later reintroduce granular roles, add a lightweight role resolver and
-decorate endpoints accordingly.
+Role hierarchy (higher value = more privilege):
+  AUDITOR (1) — read-only access
+  USER    (2) — standard file operations
+  ADMIN   (3) — full access including settings and debug
 """
+from __future__ import annotations
 
-from typing import Any as _Any  # avoid unused import lint complaints
+import time
+from enum import IntEnum
+from functools import wraps
+from typing import Any, Callable, Dict, TypeVar, cast
 
-def _attach_default_role(address: str) -> None:
-    """Attach a default implicit role to the request context.
+import jwt
+from flask import abort, current_app, request
 
-    We mimic the old interface (setting request.role) so existing endpoint code
-    that references request.role / role_name keeps functioning without change.
-    Role numeric values kept for minimal compatibility: OWNER = 2.
-    """
-    from flask import request as _req
-    _req.role = 2  # OWNER
-    _req.role_name = "owner"
 
+# ---------------------------------------------------------------------------
+# Role definitions
+# ---------------------------------------------------------------------------
+
+class Role(IntEnum):
+    AUDITOR = 1   # read-only
+    USER = 2      # standard file operations
+    ADMIN = 3     # full administrative access
+
+
+_ROLE_NAMES = {
+    Role.AUDITOR: "auditor",
+    Role.USER: "user",
+    Role.ADMIN: "admin",
+}
+
+
+def role_name(role: Role) -> str:
+    return _ROLE_NAMES.get(role, "unknown")
+
+
+# ---------------------------------------------------------------------------
+# JWT helpers
+# ---------------------------------------------------------------------------
 
 def generate_jwt(payload: Dict[str, Any]) -> str:
     secret = current_app.config["JWT_SECRET"]
@@ -43,11 +56,43 @@ def verify_jwt(token: str) -> Dict[str, Any]:
     secret = current_app.config["JWT_SECRET"]
     return jwt.decode(token, secret, algorithms=["HS256"])  # type: ignore
 
+
+# ---------------------------------------------------------------------------
+# Role resolution
+# ---------------------------------------------------------------------------
+
+def _resolve_role(address: str) -> Role:
+    """Look up the user's role from MongoDB.  Defaults to USER if unset."""
+    from .db import get_db  # noqa: WPS433 — late import to avoid circular deps
+    users = get_db()["users"]
+    doc = users.find_one({"address": address.lower()})
+    if doc and "role" in doc:
+        try:
+            return Role(int(doc["role"]))
+        except (ValueError, KeyError):
+            pass
+    return Role.USER
+
+
+def _attach_role(address: str) -> None:
+    """Resolve and attach role to the Flask request context."""
+    role = _resolve_role(address)
+    request.role = role  # type: ignore[attr-defined]
+    request.role_name = role_name(role)  # type: ignore[attr-defined]
+
+
+# ---------------------------------------------------------------------------
+# Decorators
+# ---------------------------------------------------------------------------
+
 F = TypeVar("F", bound=Callable[..., Any])
 
 
 def require_auth(fn: F) -> F:
-    """Decorator to enforce JWT auth using Authorization: Bearer <token>. Sets request.address."""
+    """Decorator: enforce JWT auth via ``Authorization: Bearer <token>``.
+
+    Sets ``request.address`` and ``request.role``.
+    """
 
     @wraps(fn)
     def wrapper(*args: Any, **kwargs: Any):
@@ -66,9 +111,29 @@ def require_auth(fn: F) -> F:
         sub = decoded.get("sub")
         if not sub:
             abort(401, "invalid subject")
-        # Attach to request context (not thread safe across greenlets, but fine here)
         request.address = sub  # type: ignore[attr-defined]
-        _attach_default_role(sub)
+        _attach_role(sub)
         return fn(*args, **kwargs)
 
     return cast(F, wrapper)
+
+
+def require_role(min_role: Role):
+    """Decorator factory: enforce minimum role after ``@require_auth``.
+
+    Usage::
+
+        @bp.get("/admin-only")
+        @require_auth
+        @require_role(Role.ADMIN)
+        def admin_endpoint(): ...
+    """
+    def decorator(fn: F) -> F:
+        @wraps(fn)
+        def wrapper(*args: Any, **kwargs: Any):
+            user_role: int = getattr(request, "role", 0)
+            if user_role < min_role:
+                abort(403, f"{role_name(min_role)} role required")
+            return fn(*args, **kwargs)
+        return cast(F, wrapper)
+    return decorator

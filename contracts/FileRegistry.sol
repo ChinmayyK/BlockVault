@@ -63,4 +63,46 @@ contract FileRegistry {
         if (m.timestamp == 0) return (false, 0, "", 0, address(0));
         return (true, m.size, m.cid, m.timestamp, m.submitter);
     }
+
+    // -----------------------------------------------------------------
+    // Merkle batch anchoring
+    // -----------------------------------------------------------------
+
+    struct BatchMeta {
+        uint256 fileCount;
+        uint256 timestamp;
+        address submitter;
+    }
+
+    mapping(bytes32 => BatchMeta) private _batches;
+
+    event BatchAnchored(bytes32 indexed merkleRoot, uint256 fileCount, address indexed submitter, uint256 timestamp);
+
+    error BatchAlreadyAnchored();
+    error ZeroRoot();
+    error ZeroCount();
+
+    /**
+     * @dev Anchor a Merkle root representing a batch of file hashes.
+     * @param merkleRoot  Merkle root of the SHA-256 leaf hashes
+     * @param fileCount   Number of files in the batch
+     */
+    function anchorBatch(bytes32 merkleRoot, uint256 fileCount) external {
+        if (merkleRoot == bytes32(0)) revert ZeroRoot();
+        if (fileCount == 0) revert ZeroCount();
+        if (_batches[merkleRoot].timestamp != 0) revert BatchAlreadyAnchored();
+        _batches[merkleRoot] = BatchMeta({
+            fileCount: fileCount,
+            timestamp: block.timestamp,
+            submitter: msg.sender
+        });
+        emit BatchAnchored(merkleRoot, fileCount, msg.sender, block.timestamp);
+    }
+
+    /**
+     * @dev Return stored batch metadata for a Merkle root.
+     */
+    function getBatch(bytes32 merkleRoot) external view returns (BatchMeta memory) {
+        return _batches[merkleRoot];
+    }
 }

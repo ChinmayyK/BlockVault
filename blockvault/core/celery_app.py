@@ -42,5 +42,10 @@ celery.conf.update(
             "schedule": _batch_interval,
             "options": {"queue": "default"},
         },
+        "anchor-audit-chain-hourly": {
+            "task": "blockvault.core.tasks.anchor_audit_chain",
+            "schedule": 3600,  # every hour
+            "options": {"queue": "default"},
+        },
     },
 )

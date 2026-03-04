@@ -186,14 +186,37 @@ def upload_file():  # type: ignore
 
     owner = getattr(request, "address").lower()
 
-    # Storage quota enforcement
+    # Storage quota enforcement (atomic — prevents race condition)
     DEFAULT_STORAGE_LIMIT = int(os.environ.get("DEFAULT_STORAGE_LIMIT_BYTES", str(1024 * 1024 * 1024)))  # 1 GB
     users_coll = get_db()["users"]
-    user_doc = users_coll.find_one({"address": owner}) or {}
-    storage_used = int(user_doc.get("storage_used", 0))
-    storage_limit = int(user_doc.get("storage_limit", DEFAULT_STORAGE_LIMIT))
-    if storage_used + len(data) > storage_limit:
-        abort(413, f"storage quota exceeded ({storage_used // (1024*1024)} MB used of {storage_limit // (1024*1024)} MB)")
+    file_size = len(data)
+    # Atomic conditional update: only increments if result stays within limit
+    quota_result = users_coll.update_one(
+        {
+            "address": owner,
+            "$expr": {
+                "$lte": [
+                    {"$add": [{"$ifNull": ["$storage_used", 0]}, file_size]},
+                    {"$ifNull": ["$storage_limit", DEFAULT_STORAGE_LIMIT]},
+                ]
+            },
+        },
+        {"$inc": {"storage_used": file_size}},
+    )
+    if quota_result.matched_count == 0:
+        # Either user doesn't exist yet or quota exceeded — check which
+        user_doc = users_coll.find_one({"address": owner})
+        if user_doc:
+            used = int(user_doc.get("storage_used", 0))
+            limit = int(user_doc.get("storage_limit", DEFAULT_STORAGE_LIMIT))
+            abort(413, f"storage quota exceeded ({used // (1024*1024)} MB used of {limit // (1024*1024)} MB)")
+        else:
+            # First upload — create user with initial usage
+            users_coll.update_one(
+                {"address": owner},
+                {"$set": {"storage_used": file_size, "storage_limit": DEFAULT_STORAGE_LIMIT}},
+                upsert=True,
+            )
     
     # Encrypt the passphrase with owner's public key for secure storage
     owner_encrypted_key = None
@@ -256,13 +279,6 @@ def upload_file():  # type: ignore
         current_app.logger.warning("Failed to enqueue IPFS task: %s", exc)
 
     log_event("upload", target_id=file_id_str, details={"name": original_name, "size": len(data), "sha256": sha256})
-
-    # Atomically increment storage usage
-    users_coll.update_one(
-        {"address": owner},
-        {"$inc": {"storage_used": len(data)}},
-        upsert=True,
-    )
 
     return {
         "file_id": file_id_str,

@@ -139,6 +139,25 @@ def batch_anchor(self: Any) -> Dict[str, Any]:
                 leaf_hashes.append(h)
                 seen.add(h)
 
+        # §4 — Merkle duplicate protection: skip already-anchored hashes
+        anchored_coll = db["anchored_hashes"]
+        already_anchored = set()
+        try:
+            existing = anchored_coll.find(
+                {"sha256": {"$in": leaf_hashes}},
+                {"sha256": 1},
+            )
+            already_anchored = {r["sha256"] for r in existing}
+        except Exception:
+            pass  # collection may not exist yet
+
+        leaf_hashes = [h for h in leaf_hashes if h not in already_anchored]
+        pending = [r for r in pending if r["sha256"] not in already_anchored]
+
+        if not leaf_hashes:
+            logger.info("batch_anchor: all hashes already anchored")
+            return {"anchored": 0, "skipped_duplicates": len(already_anchored)}
+
         # Single-leaf edge case: Merkle tree still works (root == leaf)
         tree = MerkleTree.build(leaf_hashes)
         merkle_root = tree.root
@@ -176,11 +195,65 @@ def batch_anchor(self: Any) -> Dict[str, Any]:
                 }},
             )
 
+        # §4 — Record anchored hashes for dedup
+        try:
+            anchored_coll.insert_many(
+                [{"sha256": h, "merkle_root": merkle_root, "anchor_tx": anchor_tx} for h in leaf_hashes],
+                ordered=False,
+            )
+        except Exception:
+            pass  # best effort — index will prevent exact duplicates
+
         logger.info(
             "batch_anchor: anchored %d files, root=%s, tx=%s",
             len(pending), merkle_root, anchor_tx,
         )
         return {"anchored": len(pending), "merkle_root": merkle_root, "anchor_tx": anchor_tx}
+
+
+# ---------------------------------------------------------------------------
+# §7 — Audit chain anchoring (periodic)
+# ---------------------------------------------------------------------------
+
+@celery.task(bind=True, max_retries=1, default_retry_delay=120)
+def anchor_audit_chain(self: Any) -> Dict[str, Any]:
+    """Hash the latest audit entry and anchor it on-chain.
+
+    Runs hourly via Celery Beat.  Provides external proof that
+    the audit log was not tampered with between anchoring points.
+    """
+    app = _get_app()
+    with app.app_context():
+        from blockvault.core import onchain as onchain_mod  # noqa: WPS433
+        import hashlib
+
+        db = get_db()
+        last_entry = db["audit_events"].find_one(sort=[("timestamp", -1)])
+        if not last_entry:
+            return {"status": "no_entries"}
+
+        entry_hash = last_entry.get("entry_hash", "")
+        if not entry_hash:
+            return {"status": "no_hash"}
+
+        # Anchor the audit chain hash as a pseudo-file hash
+        chain_hash = hashlib.sha256(f"audit_chain::{entry_hash}".encode()).hexdigest()
+        try:
+            tx = onchain_mod.anchor_file(chain_hash, 0, f"audit_chain::{last_entry.get('timestamp', 0)}")
+        except Exception as exc:
+            logger.warning("anchor_audit_chain failed: %s", exc)
+            return {"status": "failed", "error": str(exc)}
+
+        # Store the anchor reference
+        db["audit_anchors"].insert_one({
+            "entry_hash": entry_hash,
+            "chain_hash": chain_hash,
+            "anchor_tx": tx,
+            "timestamp": last_entry.get("timestamp"),
+        })
+
+        logger.info("audit chain anchored: tx=%s", tx)
+        return {"status": "anchored", "anchor_tx": tx}
 
 
 # ---------------------------------------------------------------------------
@@ -206,3 +279,4 @@ def _find_record(coll: Any, file_id: str) -> Optional[Dict[str, Any]]:
 def _set_status(coll: Any, rec: Dict[str, Any], field: str, value: str) -> None:
     """Convenience: set a single status field on a file record."""
     coll.update_one({"_id": rec["_id"]}, {"$set": {field: value}})
+

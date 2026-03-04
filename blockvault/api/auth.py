@@ -2,6 +2,7 @@ from __future__ import annotations
 from flask import Blueprint, request, abort, current_app
 import secrets
 import time
+import random
 from eth_account.messages import encode_defunct
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives import serialization
@@ -105,10 +106,12 @@ def login():
     try:
         recovered = Account.recover_message(encoded, signature=signature)
     except Exception:
+        time.sleep(random.uniform(0.01, 0.03))  # timing defense
         from ..core.audit import log_event
         log_event("failed_login", details={"address": address, "reason": "invalid_signature"})
         abort(400, "invalid signature")
     if recovered.lower() != address.lower():
+        time.sleep(random.uniform(0.01, 0.03))  # timing defense
         from ..core.audit import log_event
         log_event("failed_login", details={"address": address, "reason": "address_mismatch"})
         abort(401, "signature does not match address")

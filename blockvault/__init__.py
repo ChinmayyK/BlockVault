@@ -169,6 +169,13 @@ def create_app() -> Flask:
         rid = getattr(flask_request, "request_id", None)
         if rid:
             response.headers["X-Request-ID"] = rid
+        # §9 Security headers
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Content-Security-Policy"] = "default-src 'self'; frame-ancestors 'none'"
+        if not app.debug:
+            response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
         return response
 
     # -----------------------------------------------------------------

@@ -79,6 +79,8 @@ def _ensure_indexes(db: Database) -> None:
             background=True,
         )
         db["users"].create_index("address", name="idx_users_address", unique=True, background=True)
+        db["anchored_hashes"].create_index("sha256", name="idx_anchored_sha256", unique=True, background=True)
+        db["audit_anchors"].create_index([("timestamp", -1)], name="idx_audit_anchors_ts", background=True)
         logger.info("MongoDB indexes ensured.")
     except Exception as exc:
         logger.warning("Failed to create indexes (non-fatal): %s", exc)

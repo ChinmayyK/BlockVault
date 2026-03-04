@@ -89,10 +89,16 @@ def anchor_file(hash_hex: str, size: int, cid: Optional[str]) -> Optional[str]:
         file_hash_bytes = bytes.fromhex(hash_hex)
         # bytes32 => first 32 bytes (sha256 already 32)
         nonce = w3.eth.get_transaction_count(acct.address)
-        txn = contract.functions.anchorFile(file_hash_bytes, int(size), cid or "").build_transaction({
+        fn_call = contract.functions.anchorFile(file_hash_bytes, int(size), cid or "")
+        try:
+            estimated_gas = fn_call.estimate_gas({"from": acct.address})
+            gas_limit = int(estimated_gas * 1.2)  # 20% safety margin
+        except Exception:
+            gas_limit = 200000  # fallback
+        txn = fn_call.build_transaction({
             "from": acct.address,
             "nonce": nonce,
-            "gas": 180000,
+            "gas": gas_limit,
             "maxFeePerGas": w3.to_wei('30', 'gwei'),
             "maxPriorityFeePerGas": w3.to_wei('1', 'gwei'),
             "chainId": w3.eth.chain_id,
@@ -130,10 +136,16 @@ def anchor_merkle_root(root_hex: str, file_count: int) -> Optional[str]:
         contract = w3.eth.contract(address=Web3.to_checksum_address(contract_addr), abi=FILE_REGISTRY_ABI)  # type: ignore
         root_bytes = bytes.fromhex(root_hex)
         nonce = w3.eth.get_transaction_count(acct.address)
-        txn = contract.functions.anchorBatch(root_bytes, file_count).build_transaction({
+        fn_call = contract.functions.anchorBatch(root_bytes, file_count)
+        try:
+            estimated_gas = fn_call.estimate_gas({"from": acct.address})
+            gas_limit = int(estimated_gas * 1.2)  # 20% safety margin
+        except Exception:
+            gas_limit = 200000  # fallback
+        txn = fn_call.build_transaction({
             "from": acct.address,
             "nonce": nonce,
-            "gas": 180000,
+            "gas": gas_limit,
             "maxFeePerGas": w3.to_wei('30', 'gwei'),
             "maxPriorityFeePerGas": w3.to_wei('1', 'gwei'),
             "chainId": w3.eth.chain_id,

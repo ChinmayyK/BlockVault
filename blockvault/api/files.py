@@ -39,6 +39,26 @@ def ensure_role(min_role: int) -> bool:
 
 bp = Blueprint("files", __name__)
 
+# ---------------------------------------------------------------------------
+# Input sanitization — prevent NoSQL injection
+# ---------------------------------------------------------------------------
+
+def _sanitize_str(value: Any) -> str:
+    """Ensure value is a plain string, not a dict with MongoDB operators."""
+    if not isinstance(value, str):
+        abort(400, "invalid input type")
+    return value
+
+
+def _check_passphrase_strength(passphrase: str) -> None:
+    """Reject obviously weak passphrases."""
+    if len(passphrase) < 8:
+        abort(400, "passphrase too short (minimum 8 characters)")
+    # Reject common weak passphrases
+    weak = {"password", "12345678", "qwerty12", "abcdefgh", "letmein1", "password1"}
+    if passphrase.lower() in weak:
+        abort(400, "passphrase too common — choose a stronger one")
+
 
 def _files_collection():
     return get_db()["files"]
@@ -65,27 +85,20 @@ def _canonical_file_id(rec: Dict[str, Any], fallback: str) -> str:
 
 def _lookup_file(file_id: str) -> Tuple[Dict[str, Any], str]:
     coll = _files_collection()
+    file_id = _sanitize_str(file_id)
     candidates: List[Any] = []
     try:
         from bson import ObjectId  # type: ignore
-
         candidates.append(ObjectId(file_id))
     except Exception:
         pass
     candidates.append(file_id)
-    
-    current_app.logger.debug(f"Looking up file_id: {file_id}, candidates: {candidates}")
-    
+
     for candidate in candidates:
         rec = coll.find_one({"_id": candidate})
         if rec:
-            current_app.logger.debug(f"Found file: {rec.get('original_name')}")
             return rec, _canonical_file_id(rec, file_id)
-    
-    # Additional debug: List all files to see what's in the database
-    all_files = list(coll.find({}))
-    current_app.logger.error(f"File not found. Available files: {[str(f.get('_id')) for f in all_files[:10]]}")
-    
+
     abort(404, "file not found")
 
 
@@ -149,6 +162,8 @@ def upload_file():  # type: ignore
     key = request.form.get("key")
     if not key:
         abort(400, "key (passphrase) required")
+    key = _sanitize_str(key)
+    _check_passphrase_strength(key)
     aad = request.form.get("aad") or None
     folder = request.form.get("folder") or None
     if folder is not None:
@@ -604,21 +619,17 @@ def get_owner_encrypted_key(file_id: str):  # type: ignore
 
 
 @bp.post("/<file_id>/share", strict_slashes=False)
-
 @require_auth
 def share_file(file_id: str):  # type: ignore
     ensure_role(Role.OWNER)
-    owner = getattr(request, "address").lower()  # Normalize to lowercase
-    current_app.logger.info(f"📤 Share request: file_id={file_id}, owner={owner}")
-    
+    owner = getattr(request, "address").lower()
+
     try:
         file_rec, canonical_id = _lookup_file(file_id)
-    except Exception as e:
-        current_app.logger.error(f"❌ File lookup failed for {file_id}: {str(e)}")
-        abort(404, f"File not found: {file_id}")
-    
+    except Exception:
+        abort(404, "file not found")
+
     if file_rec.get("owner") != owner:
-        current_app.logger.error(f"❌ Owner mismatch: file owner={file_rec.get('owner')}, requester={owner}")
         abort(403, "only the file owner can share")
 
     data = request.get_json(silent=True) or {}
@@ -733,11 +744,11 @@ def share_file(file_id: str):  # type: ignore
 
     response = _serialize_share(result_doc, include_encrypted=True)
     
-    # Add flag to indicate keys were auto-generated for recipient
     if recipient_keys_generated:
         response["recipient_keys_generated"] = True
-        response["message"] = f"RSA keys were auto-generated for recipient {recipient_addr}. They will receive these keys on their first login."
-    
+
+    log_event("share", target_id=canonical_id, details={"recipient": recipient_addr})
+
     return response
 
 

@@ -101,12 +101,16 @@ def login():
     message = f"BlockVault login nonce: {nonce}"
     encoded = encode_defunct(text=message)
 
-    from eth_account import Account  # local import to avoid heavy import if unused
+    from eth_account import Account
     try:
         recovered = Account.recover_message(encoded, signature=signature)
     except Exception:
+        from ..core.audit import log_event
+        log_event("failed_login", details={"address": address, "reason": "invalid_signature"})
         abort(400, "invalid signature")
     if recovered.lower() != address.lower():
+        from ..core.audit import log_event
+        log_event("failed_login", details={"address": address, "reason": "address_mismatch"})
         abort(401, "signature does not match address")
 
     # Check if user already has RSA keys registered
@@ -121,7 +125,7 @@ def login():
     if not has_rsa_keys:
         # Generate RSA keys for first-time users
         try:
-            current_app.logger.info(f"🔐 Auto-generating RSA keys for user {address}")
+            current_app.logger.info("Auto-generating RSA keys for user %s", address)
             rsa_private_key, rsa_public_key = _generate_rsa_keypair()
             
             # Store public key in database
@@ -137,9 +141,9 @@ def login():
                 upsert=True,
             )
             rsa_message = "RSA keys auto-generated for secure sharing"
-            current_app.logger.info(f"✅ RSA keys registered for user {address}")
+            current_app.logger.info("RSA keys registered for user %s", address)
         except Exception as e:
-            current_app.logger.warning(f"⚠️ Failed to auto-generate RSA keys: {e}")
+            current_app.logger.warning("Failed to auto-generate RSA keys: %s", e)
             # Non-fatal - user can generate later manually
     else:
         # User already has keys - check if there are pending private keys from shares

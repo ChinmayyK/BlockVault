@@ -199,11 +199,11 @@ def login():
 @bp.get("/me")
 @require_auth
 def me():  # type: ignore
-    # request.address is set by require_auth
     from flask import request as _req
-    role = getattr(_req, "role", None)
+    from ..core.security import role_name
+    role = getattr(_req, "role", 2)
     return {
         "address": getattr(_req, "address"),
-        "role": "owner",
-        "role_value": 2,
+        "role": role_name(role),
+        "role_value": int(role),
     }

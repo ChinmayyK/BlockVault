@@ -1,6 +1,19 @@
-from flask import Flask, jsonify
+"""BlockVault Flask application factory with security hardening.
+
+Security features:
+- Flask-Limiter for per-endpoint rate limiting
+- Restricted CORS (no wildcard in production)
+- Structured JSON logging
+- dev_token endpoint auto-disabled in production
+"""
+import logging
 import os
+import sys
+from flask import Flask, jsonify, request as flask_request
 from flask_cors import CORS
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
+
 from .core.config import load_config
 from .core.db import init_db, get_client
 from .core.s3 import init_s3
@@ -11,14 +24,73 @@ from .api.users import bp as users_bp
 from .api.settings import bp as settings_bp
 from .api.blockchain import bp as blockchain_bp
 
+
+# ---------------------------------------------------------------------------
+# Structured logging setup
+# ---------------------------------------------------------------------------
+
+def _setup_logging(app: Flask) -> None:
+    """Configure structured JSON-like logging for production, standard for dev."""
+    log_level = logging.DEBUG if app.config.get("DEBUG") else logging.INFO
+
+    class StructuredFormatter(logging.Formatter):
+        def format(self, record: logging.LogRecord) -> str:
+            import json, time as _time
+            entry = {
+                "ts": _time.strftime("%Y-%m-%dT%H:%M:%S", _time.gmtime(record.created)),
+                "level": record.levelname,
+                "logger": record.name,
+                "msg": record.getMessage(),
+            }
+            if record.exc_info and record.exc_info[1]:
+                entry["exc"] = self.formatException(record.exc_info)
+            return json.dumps(entry, default=str)
+
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setLevel(log_level)
+    if not app.config.get("DEBUG"):
+        handler.setFormatter(StructuredFormatter())
+    else:
+        handler.setFormatter(logging.Formatter(
+            "[%(asctime)s] %(levelname)s %(name)s: %(message)s"
+        ))
+
+    # Apply to root logger so all modules get structured output
+    root = logging.getLogger()
+    root.setLevel(log_level)
+    root.handlers.clear()
+    root.addHandler(handler)
+
+    app.logger.handlers = root.handlers
+    app.logger.setLevel(log_level)
+
+
+# ---------------------------------------------------------------------------
+# Rate limiter key function: prefer authenticated address, fall back to IP
+# ---------------------------------------------------------------------------
+
+def _rate_limit_key() -> str:
+    """Use the authenticated wallet address if available, otherwise remote IP."""
+    addr = getattr(flask_request, "address", None)
+    if addr:
+        return str(addr).lower()
+    return get_remote_address()
+
+
+# ---------------------------------------------------------------------------
+# App factory
+# ---------------------------------------------------------------------------
+
 def create_app() -> Flask:
     app = Flask(__name__)
 
     cfg = load_config()
+    is_production = cfg.env == "production"
+
     app.config.update(
         SECRET_KEY=cfg.secret_key,
         JWT_SECRET=cfg.jwt_secret,
-        JWT_EXP_MINUTES=cfg.jwt_exp_minutes,  # JWT expiration in minutes (default 60)
+        JWT_EXP_MINUTES=cfg.jwt_exp_minutes,
         MONGO_URI=cfg.mongo_uri,
         ENV=cfg.env,
         DEBUG=cfg.debug,
@@ -26,7 +98,6 @@ def create_app() -> Flask:
         IPFS_API_URL=cfg.ipfs_api_url,
         IPFS_API_TOKEN=cfg.ipfs_api_token,
         IPFS_GATEWAY_URL=cfg.ipfs_gateway_url,
-    # On-chain access control removed; no ETH_RPC_URL needed
         CORS_ALLOWED_ORIGINS=cfg.cors_allowed_origins,
         S3_BUCKET=cfg.s3_bucket,
         S3_REGION=cfg.s3_region,
@@ -35,22 +106,45 @@ def create_app() -> Flask:
         S3_SECRET_KEY=cfg.s3_secret_key,
     )
 
+    # -----------------------------------------------------------------
+    # Structured logging
+    # -----------------------------------------------------------------
+    _setup_logging(app)
+
+    # -----------------------------------------------------------------
+    # Database and storage init
+    # -----------------------------------------------------------------
     init_db(app)
     init_s3(app)
-    # Load DB-stored dynamic settings (contract overrides) after DB init
-    with app.app_context():  # ensure current_app available
+    with app.app_context():
         try:
             bootstrap_settings_into_config()
-        except Exception as e:  # non-fatal
-            app.logger.warning(f"Failed to bootstrap dynamic settings: {e}")
-        # On-chain sync removed
-    # Enable CORS with optional origin overrides for deployment.
-    allowed_origins = cfg.cors_allowed_origins or "*"
-    if allowed_origins.strip() in {"*", ""}:
-        cors_config = {r"/*": {"origins": "*"}}
+        except Exception as e:
+            app.logger.warning("Failed to bootstrap dynamic settings: %s", e)
+
+    # -----------------------------------------------------------------
+    # CORS — restrict in production, allow all in development
+    # -----------------------------------------------------------------
+    allowed_origins = cfg.cors_allowed_origins
+    if is_production:
+        if not allowed_origins or allowed_origins.strip() in {"*", ""}:
+            app.logger.warning(
+                "CORS_ALLOWED_ORIGINS not set in production — "
+                "defaulting to same-origin only. Set CORS_ALLOWED_ORIGINS env var."
+            )
+            # No wildcard in production: allow only same-origin
+            cors_config = {r"/*": {"origins": []}}
+        else:
+            origin_list = [o.strip() for o in allowed_origins.split(",") if o.strip()]
+            cors_config = {r"/*": {"origins": origin_list}}
     else:
-        origin_list = [o.strip() for o in allowed_origins.split(",") if o.strip()]
-        cors_config = {r"/*": {"origins": origin_list}}
+        # Development: if origins configured use them, otherwise allow all
+        if allowed_origins and allowed_origins.strip() not in {"*", ""}:
+            origin_list = [o.strip() for o in allowed_origins.split(",") if o.strip()]
+            cors_config = {r"/*": {"origins": origin_list}}
+        else:
+            cors_config = {r"/*": {"origins": "*"}}
+
     CORS(
         app,
         resources=cors_config,
@@ -58,7 +152,25 @@ def create_app() -> Flask:
         supports_credentials=False,
     )
 
+    # -----------------------------------------------------------------
+    # Rate limiting (Flask-Limiter)
+    # -----------------------------------------------------------------
+    limiter = Limiter(
+        key_func=_rate_limit_key,
+        app=app,
+        default_limits=["200/minute"],
+        storage_uri=os.environ.get("CELERY_BROKER_URL", "memory://"),
+    )
+
+    # Auth endpoints: strict 5/min
+    limiter.limit("5/minute")(auth_bp)
+
+    # Upload (files blueprint): 10/min per user
+    limiter.limit("10/minute")(files_bp)
+
+    # -----------------------------------------------------------------
     # Standard JSON error responses
+    # -----------------------------------------------------------------
     @app.errorhandler(400)
     @app.errorhandler(401)
     @app.errorhandler(403)
@@ -67,23 +179,30 @@ def create_app() -> Flask:
     @app.errorhandler(410)
     @app.errorhandler(413)
     @app.errorhandler(415)
+    @app.errorhandler(429)  # Rate limit exceeded
     @app.errorhandler(500)
     def json_error(err):  # type: ignore
         code = getattr(err, 'code', 500)
         return jsonify({"error": getattr(err, 'description', str(err)), "code": code}), code
 
+    # -----------------------------------------------------------------
+    # Register blueprints
+    # -----------------------------------------------------------------
     app.register_blueprint(auth_bp, url_prefix="/auth")
     app.register_blueprint(files_bp, url_prefix="/files")
     app.register_blueprint(users_bp, url_prefix="/users")
     app.register_blueprint(settings_bp, url_prefix="/settings")
     app.register_blueprint(blockchain_bp, url_prefix="/blockchain")
-    
-    # Register case management routes
+
     from .mock_cases import register_case_routes
     register_case_routes(app)
 
+    # -----------------------------------------------------------------
+    # Utility / health endpoints
+    # -----------------------------------------------------------------
+
     @app.get('/status')
-    def status():  # runtime capability flags for frontend label (Off-Chain / Anchored / Hybrid)
+    def status():
         import time
         import requests
         ipfs_enabled = bool(app.config.get('IPFS_ENABLED'))
@@ -93,7 +212,6 @@ def create_app() -> Flask:
         ipfs_error = None
         if ipfs_enabled:
             api_url = (app.config.get('IPFS_API_URL') or '').rstrip('/') or 'http://127.0.0.1:5001'
-            # Only attempt a very fast health probe; keep failure silent beyond response fields
             try:
                 ver_endpoint = api_url + '/api/v0/version'
                 r = requests.post(ver_endpoint, timeout=2)
@@ -119,13 +237,10 @@ def create_app() -> Flask:
             mode = 'anchored'
         elif ipfs_enabled:
             mode = 'ipfs'
-        return {
-            **cfg_flags,
-            'mode': mode,
-        }
+        return {**cfg_flags, 'mode': mode}
 
     @app.get('/auth/_routes')
-    def auth_routes():  # lightweight diagnostics
+    def auth_routes():
         auth_rules = []
         for r in app.url_map.iter_rules():  # type: ignore
             if str(r).startswith('/auth'):
@@ -161,7 +276,7 @@ def create_app() -> Flask:
                 "/files/<id> (GET download)",
                 "/files (GET list)",
                 "/files/<id> (DELETE)",
-                "/files/<id>/verify (GET verify integrity)",
+                "/files/<id>/verify (GET verify integrity + Merkle proof)",
                 "/files/<id>/share (POST create/update share)",
                 "/files/shared (GET shares received)",
                 "/files/shares/outgoing (GET shares sent)",
@@ -171,7 +286,6 @@ def create_app() -> Flask:
                 "/users/profile (GET role & sharing key status)",
                 "/users/public_key (POST/DELETE manage sharing key)",
                 "/settings (GET current dynamic contract addresses, POST admin update)",
-                "/debug/files (DEV only raw listing)",
             ],
         })
         resp.headers['X-Route'] = 'index'
@@ -183,17 +297,22 @@ def create_app() -> Flask:
         r.headers['X-Route'] = 'ping'
         return r
 
+    # -----------------------------------------------------------------
+    # Debug / dev endpoints — ADMIN-only and disabled in production
+    # -----------------------------------------------------------------
+
     @app.get("/debug/files")
-    def debug_files():  # ADMIN-only dev aid
+    def debug_files():
+        if is_production:
+            return {"error": "not available in production"}, 404
         from .core.security import verify_jwt, Role
-        auth_header = __import__('flask').request.headers.get("Authorization", "")
+        auth_header = flask_request.headers.get("Authorization", "")
         if not auth_header.startswith("Bearer "):
             return {"error": "auth required"}, 401
         try:
             decoded = verify_jwt(auth_header.removeprefix("Bearer ").strip())
         except Exception:
             return {"error": "invalid token"}, 401
-        # Check admin role
         from .core.db import get_db
         addr = decoded.get("sub", "").lower()
         user_doc = get_db()["users"].find_one({"address": addr})
@@ -214,12 +333,14 @@ def create_app() -> Flask:
         except Exception as e:
             return {"error": str(e)}, 500
 
-    # Dev-only token minting (DO NOT ENABLE IN PROD). Set ALLOW_DEV_TOKEN=1 to expose.
     @app.get("/auth/dev_token")
     def dev_token():
+        # Auto-disabled in production regardless of env var
+        if is_production:
+            return {"error": "not available in production"}, 404
         if os.getenv("ALLOW_DEV_TOKEN", "0").lower() not in {"1", "true", "yes"}:
             return {"error": "not enabled"}, 404
-        raw_address = ( ( __import__('flask').request.args.get('address') ) or '' ).strip()
+        raw_address = (flask_request.args.get('address') or '').strip()
         if not raw_address:
             return {"error": "address query param required"}, 400
         from string import hexdigits

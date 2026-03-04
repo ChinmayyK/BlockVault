@@ -148,9 +148,28 @@ def create_app() -> Flask:
     CORS(
         app,
         resources=cors_config,
-        expose_headers=["Authorization", "Content-Type"],
+        expose_headers=["Authorization", "Content-Type", "X-Request-ID"],
         supports_credentials=False,
     )
+
+    # -----------------------------------------------------------------
+    # Request ID middleware
+    # -----------------------------------------------------------------
+    import uuid
+
+    @app.before_request
+    def _inject_request_id():
+        rid = flask_request.headers.get("X-Request-ID")
+        if not rid:
+            rid = uuid.uuid4().hex
+        flask_request.request_id = rid  # type: ignore[attr-defined]
+
+    @app.after_request
+    def _propagate_request_id(response):
+        rid = getattr(flask_request, "request_id", None)
+        if rid:
+            response.headers["X-Request-ID"] = rid
+        return response
 
     # -----------------------------------------------------------------
     # Rate limiting (Flask-Limiter)

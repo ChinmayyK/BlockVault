@@ -53,6 +53,35 @@ def init_db(app: Flask) -> None:
     default_db = _client.get_default_database(default=DB_NAME)
     _database = default_db
 
+    # Create indexes (idempotent — safe to run every startup)
+    _ensure_indexes(_database)
+
+
+def _ensure_indexes(db: Database) -> None:
+    """Create compound and single-field indexes for query performance."""
+    try:
+        db["files"].create_index(
+            [("owner", 1), ("created_at", -1)],
+            name="idx_files_owner_created",
+            background=True,
+        )
+        db["files"].create_index("sha256", name="idx_files_sha256", background=True)
+        db["shares"].create_index("recipient", name="idx_shares_recipient", background=True)
+        db["shares"].create_index("file_id", name="idx_shares_file_id", background=True)
+        db["audit_events"].create_index(
+            [("timestamp", -1)],
+            name="idx_audit_timestamp",
+            background=True,
+        )
+        db["audit_events"].create_index(
+            [("user_id", 1), ("timestamp", -1)],
+            name="idx_audit_user_time",
+            background=True,
+        )
+        db["users"].create_index("address", name="idx_users_address", unique=True, background=True)
+        logger.info("MongoDB indexes ensured.")
+    except Exception as exc:
+        logger.warning("Failed to create indexes (non-fatal): %s", exc)
 
 def get_db() -> Database:
     """Return the shared database handle.

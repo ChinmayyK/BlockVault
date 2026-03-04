@@ -184,7 +184,10 @@ def login():
     _nonce_collection().delete_one({"address": address})
 
     token = generate_jwt({"sub": address})
-    
+
+    from ..core.audit import log_event
+    log_event("login", details={"address": address})
+
     response = {"token": token, "address": address}
     
     # Return RSA keys to frontend for local storage (only on first generation or retrieval)

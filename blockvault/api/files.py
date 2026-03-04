@@ -14,6 +14,7 @@ from cryptography.hazmat.primitives.asymmetric import padding
 
 from ..core.security import require_auth, Role, require_role
 from ..core.db import get_db
+from ..core.audit import log_event
 from ..core.crypto_client import (
     encrypt_data as crypto_encrypt,
     decrypt_data as crypto_decrypt,
@@ -23,6 +24,9 @@ from ..core.crypto_client import (
 from ..core import s3 as s3_mod
 from ..core import ipfs as ipfs_mod
 from ..core import onchain as onchain_mod
+
+# Configurable upload size limit (default 100 MB)
+MAX_UPLOAD_BYTES = int(os.environ.get("MAX_UPLOAD_BYTES", str(100 * 1024 * 1024)))
 
 
 def ensure_role(min_role: int) -> bool:
@@ -153,11 +157,28 @@ def upload_file():  # type: ignore
             abort(400, "folder name too long (max 120 chars)")
 
     original_name = up_file.filename
-    data = up_file.read()
+
+    # Check Content-Length header first (fast reject)
+    content_length = request.content_length
+    if content_length and content_length > MAX_UPLOAD_BYTES:
+        abort(413, f"file too large (max {MAX_UPLOAD_BYTES // (1024*1024)} MB)")
+
+    data = up_file.read(MAX_UPLOAD_BYTES + 1)
+    if len(data) > MAX_UPLOAD_BYTES:
+        abort(413, f"file too large (max {MAX_UPLOAD_BYTES // (1024*1024)} MB)")
     if not data:
         abort(400, "empty file content")
 
     owner = getattr(request, "address").lower()
+
+    # Storage quota enforcement
+    DEFAULT_STORAGE_LIMIT = int(os.environ.get("DEFAULT_STORAGE_LIMIT_BYTES", str(1024 * 1024 * 1024)))  # 1 GB
+    users_coll = get_db()["users"]
+    user_doc = users_coll.find_one({"address": owner}) or {}
+    storage_used = int(user_doc.get("storage_used", 0))
+    storage_limit = int(user_doc.get("storage_limit", DEFAULT_STORAGE_LIMIT))
+    if storage_used + len(data) > storage_limit:
+        abort(413, f"storage quota exceeded ({storage_used // (1024*1024)} MB used of {storage_limit // (1024*1024)} MB)")
     
     # Encrypt the passphrase with owner's public key for secure storage
     owner_encrypted_key = None
@@ -218,6 +239,15 @@ def upload_file():  # type: ignore
         pin_to_ipfs.delay(file_id_str)
     except Exception as exc:
         current_app.logger.warning("Failed to enqueue IPFS task: %s", exc)
+
+    log_event("upload", target_id=file_id_str, details={"name": original_name, "size": len(data), "sha256": sha256})
+
+    # Atomically increment storage usage
+    users_coll.update_one(
+        {"address": owner},
+        {"$inc": {"storage_used": len(data)}},
+        upsert=True,
+    )
 
     return {
         "file_id": file_id_str,
@@ -319,6 +349,8 @@ def download_file(file_id: str):  # type: ignore
             else:
                 mimetype = 'application/octet-stream'
         
+        log_event("download", target_id=file_id)
+
         return send_file(
             io.BytesIO(data),
             as_attachment=not inline,
@@ -430,6 +462,7 @@ def delete_file(file_id: str):  # type: ignore
         coll.delete_one({"_id": oid, "owner": owner})
     except Exception:
         pass
+    log_event("delete", target_id=file_id)
     return {"status": "deleted", "file_id": file_id}
 
 
@@ -539,6 +572,7 @@ def verify_file(file_id: str):  # type: ignore
         "merkle_proof": merkle_proof,
         "merkle_valid": merkle_valid,
     }
+    log_event("verify", target_id=file_id, details={"merkle_valid": merkle_valid})
     return result
 
 

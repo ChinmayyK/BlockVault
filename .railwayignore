@@ -1,0 +1,14 @@
+# Ignore frontend - Railway will only deploy the backend
+blockvault-frontend/
+*.md
+.git/
+.gitignore
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.env
+.env.local
+*.egg-info/
+dist/
+build/

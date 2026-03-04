@@ -1,0 +1,23 @@
+[package]
+name = "blockvault_crypto"
+version = "0.2.0"
+edition = "2021"
+
+[dependencies]
+aes-gcm = { version = "0.10", features = ["aes"] }
+argon2 = "0.5"
+pbkdf2 = "0.12"     # legacy V1 format decryption only
+sha2 = "0.10"       # legacy V1 format decryption only
+rand = "0.8"
+base64 = "0.22"
+anyhow = "1.0"
+zeroize = { version = "1.8", features = ["derive"] }
+hex = "0.4"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+log = "0.4"
+env_logger = "0.11"
+
+[dev-dependencies]
+tempfile = "3.12"

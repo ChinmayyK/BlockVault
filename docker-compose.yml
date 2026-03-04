@@ -1,0 +1,73 @@
+services:
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+  crypto:
+    build:
+      context: .
+      dockerfile: Dockerfile.crypto
+    restart: unless-stopped
+    environment:
+      - CRYPTO_LISTEN_ADDR=0.0.0.0:9876
+      - RUST_LOG=info
+    ports:
+      - "9876:9876"
+
+  backend:
+    build: .
+    command: python app.py
+    environment:
+      - MONGO_URI=mongodb://mongo:27017/blockvault
+      - FLASK_ENV=development
+      - SECRET_KEY=change-me-compose
+      - JWT_SECRET=change-me-jwt-compose
+      - CRYPTO_DAEMON_ADDR=crypto:9876
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - S3_BUCKET=${S3_BUCKET:-mock-bucket}
+      - S3_REGION=${S3_REGION:-us-east-1}
+      - S3_ENDPOINT=${S3_ENDPOINT:-http://localhost:9000}
+      - S3_ACCESS_KEY=${S3_ACCESS_KEY:-mock-access-key}
+      - S3_SECRET_KEY=${S3_SECRET_KEY:-mock-secret-key}
+    ports:
+      - "5000:5000"
+    depends_on:
+      - mongo
+      - crypto
+      - redis
+
+  celery-worker:
+    build: .
+    command: celery -A blockvault.core.celery_app worker --loglevel=info
+    environment:
+      - MONGO_URI=mongodb://mongo:27017/blockvault
+      - FLASK_ENV=development
+      - SECRET_KEY=change-me-compose
+      - JWT_SECRET=change-me-jwt-compose
+      - CRYPTO_DAEMON_ADDR=crypto:9876
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - S3_BUCKET=${S3_BUCKET:-mock-bucket}
+      - S3_REGION=${S3_REGION:-us-east-1}
+      - S3_ENDPOINT=${S3_ENDPOINT:-http://localhost:9000}
+      - S3_ACCESS_KEY=${S3_ACCESS_KEY:-mock-access-key}
+      - S3_SECRET_KEY=${S3_SECRET_KEY:-mock-secret-key}
+    depends_on:
+      - mongo
+      - redis
+      - crypto
+
+volumes:
+  mongo_data:
+  redis_data:

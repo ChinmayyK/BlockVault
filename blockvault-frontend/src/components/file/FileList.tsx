@@ -11,6 +11,7 @@ import {
   Lock,
   X,
   Loader2,
+  Shield,
 } from 'lucide-react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useFiles } from '@/contexts/FileContext';
@@ -19,6 +20,8 @@ import { Card } from '@/components/ui/card';
 import { ScrollingText } from '@/components/ui/ScrollingText';
 import { LegalModalFrame } from '@/components/legal/modals/LegalModalFrame';
 import { createPortal } from 'react-dom';
+import { useNavigate } from 'react-router-dom';
+import { verifyRedaction } from '@/api/redactor';
 
 interface FileListProps {
   files?: any[];
@@ -42,11 +45,13 @@ export const FileList: React.FC<FileListProps> = React.memo(({
   isLoadingMore = false,
 }) => {
   const { downloadFile, deleteFile, revokeShare } = useFiles();
+  const navigate = useNavigate();
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [selectedFileData, setSelectedFileData] = useState<any>(null);
   const [passphrase, setPassphrase] = useState('');
   const [showPassphraseModal, setShowPassphraseModal] = useState(false);
+  const [proofStatusById, setProofStatusById] = useState<Record<string, 'verified' | 'missing'>>({});
   const menuRef = useRef<HTMLDivElement | null>(null);
   const parentRef = useRef<HTMLDivElement>(null);
   const selectionContainerRef = useRef<HTMLDivElement | null>(null);
@@ -352,6 +357,65 @@ export const FileList: React.FC<FileListProps> = React.memo(({
   const itemsToRender = type === 'shares' ? (shares || []).filter(share => share && typeof share === 'object') : (files || []).filter(file => file && typeof file === 'object');
   const shouldUseVirtualScrolling = itemsToRender.length > 20;
 
+  useEffect(() => {
+    if (type !== 'my-files') return;
+    const fileMeta = itemsToRender
+      .map((file) => ({
+        id: file?.file_id || file?.id || file?._id,
+        redactionStatus: file?.redaction_status,
+        redactedFrom: file?.redacted_from,
+      }))
+      .filter((item) => typeof item.id === 'string');
+
+    const eligible = fileMeta
+      .filter((item) => item.redactionStatus || item.redactedFrom)
+      .map((item) => item.id as string);
+    const ineligible = fileMeta
+      .filter((item) => !item.redactionStatus && !item.redactedFrom)
+      .map((item) => item.id as string);
+
+    if (ineligible.length) {
+      setProofStatusById((prev) => {
+        const next = { ...prev };
+        ineligible.forEach((id) => {
+          if (!next[id]) {
+            next[id] = 'missing';
+          }
+        });
+        return next;
+      });
+    }
+
+    const missing = eligible.filter((id) => !proofStatusById[id]);
+    if (missing.length === 0) return;
+
+    let cancelled = false;
+    Promise.all(
+      missing.map(async (id) => {
+        try {
+          const result = await verifyRedaction(id);
+          const verified = result.proof_valid ?? result.valid_proof;
+          return { id, status: verified ? 'verified' : 'missing' };
+        } catch {
+          return { id, status: 'missing' as const };
+        }
+      })
+    ).then((results) => {
+      if (cancelled) return;
+      setProofStatusById((prev) => {
+        const next = { ...prev };
+        results.forEach((r) => {
+          next[r.id] = r.status;
+        });
+        return next;
+      });
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [itemsToRender, proofStatusById, type]);
+
   const getResponsiveColumns = useCallback(() => {
     if (viewMode !== 'grid') return 1;
     if (typeof window === 'undefined') return 1;
@@ -501,6 +565,7 @@ export const FileList: React.FC<FileListProps> = React.memo(({
     const createdAt = file?.created_at || new Date().toISOString();
     const folder = file?.folder;
     const isSelected = selectedIds.has(fileId);
+    const proofStatus = proofStatusById[fileId] || 'missing';
 
     return (
       <Card
@@ -528,6 +593,17 @@ export const FileList: React.FC<FileListProps> = React.memo(({
                   className="font-semibold text-foreground mb-1 group-hover:text-primary transition-colors"
                 />
                 <p className="text-xs text-muted-foreground font-medium">{formatFileSize(fileSize)}</p>
+                {type === 'my-files' && (
+                  <span
+                    className={`inline-flex items-center mt-2 px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                      proofStatus === 'verified'
+                        ? 'bg-emerald-500/15 text-emerald-400'
+                        : 'bg-amber-500/15 text-amber-400'
+                    }`}
+                  >
+                    {proofStatus === 'verified' ? '✓ Proof Verified' : '⚠ Proof Missing'}
+                  </span>
+                )}
               </div>
             </div>
             <div className="relative flex-shrink-0">
@@ -989,6 +1065,21 @@ export const FileList: React.FC<FileListProps> = React.memo(({
                     Delete Permanently
                   </span>
                   <span className="text-[10px] uppercase tracking-widest text-destructive">Danger</span>
+                </button>
+              )}
+              {type === 'my-files' && (menuAnchor.data?.name?.toLowerCase().endsWith('.pdf') || menuAnchor.data?.file_name?.toLowerCase().endsWith('.pdf')) && (
+                <button
+                  onClick={() => {
+                    navigate(`/redact/${menuAnchor.data?.file_id || menuAnchor.data?.id || menuAnchor.data?._id}`);
+                    closeMenu();
+                  }}
+                  className="flex w-full items-center justify-between gap-3 px-4 py-3 text-sm text-orange-500 hover:bg-orange-500/10 transition-colors"
+                >
+                  <span className="flex items-center gap-2 font-medium">
+                    <Shield className="w-4 h-4" />
+                    Redact Document
+                  </span>
+                  <span className="text-[10px] uppercase tracking-widest text-orange-500">Secure</span>
                 </button>
               )}
               {type === 'shared' && (

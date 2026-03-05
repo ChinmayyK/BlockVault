@@ -20,6 +20,7 @@ import NotarizationWorker from '@/workers/notarizationWorker?worker';
 import { logger } from '@/utils/logger';
 import { getApiBase } from '@/lib/getApiBase';
 import { readStoredUser } from '@/utils/authStorage';
+import { validatePassphrase } from '@/utils/passphrase';
 import { cn } from '@/lib/utils';
 import { GlowingSeparator } from '@/components/ui/glowing-separator';
 
@@ -227,6 +228,12 @@ export const NotarizeDocumentModal: React.FC<NotarizeDocumentModalProps> = ({ on
   const handleNotarize = async () => {
     if (!selectedFile || !passphrase) {
       toast.error('Please select a file and enter a passphrase');
+      return;
+    }
+    const passphraseError = validatePassphrase(passphrase);
+    if (passphraseError) {
+      setErrorMessage(passphraseError);
+      toast.error(passphraseError);
       return;
     }
 

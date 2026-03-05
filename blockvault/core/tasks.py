@@ -8,6 +8,7 @@ outside the request cycle.
 """
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any, Dict, List, Optional
 
@@ -98,6 +99,107 @@ def pin_to_ipfs(self: Any, file_id: str) -> Dict[str, Any]:
         )
         logger.info("pin_to_ipfs: file %s pinned as %s", file_id, cid)
         return {"file_id": file_id, "ipfs_status": "complete", "cid": cid}
+
+
+# ---------------------------------------------------------------------------
+# ZK redaction proof generation (async)
+# ---------------------------------------------------------------------------
+
+@celery.task(bind=True, max_retries=2, default_retry_delay=60)
+def generate_redaction_proof_task(self: Any, file_id: str) -> Dict[str, Any]:
+    """Generate ZK redaction proofs asynchronously from stored inputs."""
+    app = _get_app()
+    with app.app_context():
+        from blockvault.core import s3 as s3_mod  # noqa: WPS433
+        from blockvault.core import onchain as onchain_mod  # noqa: WPS433
+        from blockvault.core.zk_redaction import (
+            generate_redaction_proof_from_inputs,
+            redaction_proof_key,
+        )  # noqa: WPS433
+
+        coll = _files_collection()
+        rec = _find_record(coll, file_id)
+        if rec is None:
+            logger.error("redaction_proof: file %s not found", file_id)
+            return {"file_id": file_id, "status": "failed", "error": "not found"}
+
+        if rec.get("redaction_status") != "pending":
+            return {"file_id": file_id, "status": rec.get("redaction_status", "unknown")}
+
+        inputs_key = rec.get("redaction_inputs_location")
+        if not inputs_key:
+            _set_status(coll, rec, "redaction_status", "failed")
+            return {"file_id": file_id, "status": "failed", "error": "missing inputs"}
+
+        try:
+            inputs_blob = s3_mod.download_blob(inputs_key)
+            inputs = json.loads(inputs_blob.decode("utf-8"))
+        except Exception as exc:
+            _set_status(coll, rec, "redaction_status", "failed")
+            coll.update_one({"_id": rec["_id"]}, {"$set": {"redaction_error": str(exc)}})
+            return {"file_id": file_id, "status": "failed", "error": str(exc)}
+
+        try:
+            proof_bundle = generate_redaction_proof_from_inputs(inputs)
+        except Exception as exc:
+            try:
+                raise self.retry(exc=exc)
+            except self.MaxRetriesExceededError:
+                _set_status(coll, rec, "redaction_status", "failed")
+                coll.update_one({"_id": rec["_id"]}, {"$set": {"redaction_error": str(exc)}})
+                return {"file_id": file_id, "status": "failed", "error": str(exc)}
+
+        proof_package = proof_bundle.get("proof_package", {})
+        metadata = proof_bundle.get("metadata", {})
+        proof_location = redaction_proof_key(file_id)
+
+        try:
+            s3_mod.upload_blob(proof_location, json.dumps(proof_package).encode("utf-8"))
+        except Exception as exc:
+            _set_status(coll, rec, "redaction_status", "failed")
+            coll.update_one({"_id": rec["_id"]}, {"$set": {"redaction_error": str(exc)}})
+            return {"file_id": file_id, "status": "failed", "error": str(exc)}
+
+        # Anchor redaction proof commitment on-chain (best-effort)
+        anchor_hash = metadata.get("anchor_hash")
+        anchor_tx = None
+        if anchor_hash:
+            try:
+                anchor_tx = onchain_mod.anchor_redaction_proof(anchor_hash)
+            except Exception:
+                anchor_tx = None
+
+        existing_proof = rec.get("redaction_proof") or {}
+        existing_proof.update(
+            {
+                "proof_hash": metadata.get("proof_hash"),
+                "proof_location": proof_location,
+                "original_root": metadata.get("original_root"),
+                "redacted_root": metadata.get("redacted_root"),
+                "chunk_size": metadata.get("chunk_size"),
+                "block_size": metadata.get("block_size"),
+                "chunk_count": metadata.get("chunk_count"),
+                "modified_chunks": metadata.get("modified_chunks"),
+                "anchor_hash": anchor_hash,
+            }
+        )
+
+        update = {
+            "redaction_status": "complete",
+            "redaction_proof": existing_proof,
+            "redaction_anchor_tx": anchor_tx,
+            "redaction_inputs_location": None,
+        }
+        coll.update_one({"_id": rec["_id"]}, {"$set": update})
+
+        # Best-effort cleanup of inputs blob
+        try:
+            s3_mod.delete_blob(inputs_key)
+        except Exception:
+            pass
+
+        logger.info("redaction_proof: generated proof for %s", file_id)
+        return {"file_id": file_id, "status": "complete", "proof_location": proof_location}
 
 
 # ---------------------------------------------------------------------------
@@ -279,4 +381,3 @@ def _find_record(coll: Any, file_id: str) -> Optional[Dict[str, Any]]:
 def _set_status(coll: Any, rec: Dict[str, Any], field: str, value: str) -> None:
     """Convenience: set a single status field on a file record."""
     coll.update_one({"_id": rec["_id"]}, {"$set": {field: value}})
-

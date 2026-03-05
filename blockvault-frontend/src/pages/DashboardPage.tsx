@@ -38,12 +38,9 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/contexts/AuthContext";
 import { useFiles } from "@/contexts/FileContext";
+import { FileUpload } from "@/components/file/FileUpload";
 import { FileList } from "@/components/file/FileList";
 import { useDebounce } from "@/hooks/useDebounce";
-
-const LazyFileUpload = lazy(() =>
-  import("@/components/file/FileUpload").then((module) => ({ default: module.FileUpload }))
-);
 
 const LazyShareModal = lazy(() =>
   import("@/components/file/ShareModal").then((module) => ({ default: module.ShareModal }))
@@ -507,9 +504,7 @@ export default function DashboardPage() {
 
       {/* Upload Modal */}
       {showUpload && (
-        <Suspense fallback={<div className="fixed inset-0 z-50 flex items-center justify-center bg-background/70">Loading uploader…</div>}>
-          <LazyFileUpload onClose={() => setShowUpload(false)} />
-        </Suspense>
+        <FileUpload onClose={() => setShowUpload(false)} />
       )}
 
       {/* Share Modal */}

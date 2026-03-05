@@ -31,6 +31,7 @@ class Config:
     s3_endpoint: str | None = None  # for MinIO / self-hosted S3
     s3_access_key: str | None = None
     s3_secret_key: str | None = None
+    redactor_service_url: str | None = None
 
 
 def load_config() -> Config:
@@ -56,6 +57,7 @@ def load_config() -> Config:
     s3_endpoint = os.getenv("S3_ENDPOINT")
     s3_access_key = os.getenv("S3_ACCESS_KEY")
     s3_secret_key = os.getenv("S3_SECRET_KEY")
+    redactor_service_url = os.getenv("REDACTOR_SERVICE_URL")
     return Config(
         env=env,
         debug=debug,
@@ -79,4 +81,5 @@ def load_config() -> Config:
         s3_endpoint=s3_endpoint,
         s3_access_key=s3_access_key,
         s3_secret_key=s3_secret_key,
+        redactor_service_url=redactor_service_url,
     )

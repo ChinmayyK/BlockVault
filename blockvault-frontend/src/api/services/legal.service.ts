@@ -15,18 +15,6 @@ export const legalService = {
   },
 
   /**
-   * Redact sensitive information from document
-   */
-  async redactDocument(data: {
-    fileId: string;
-    patterns: string[];
-    customPatterns?: string[];
-  }) {
-    const response = await apiClient.post(API_ENDPOINTS.LEGAL.REDACT, data);
-    return response.data;
-  },
-
-  /**
    * Request signature for document
    */
   async requestSignature(data: {
@@ -106,7 +94,6 @@ export const legalService = {
     return response.data;
   },
 };
-
 
 
 

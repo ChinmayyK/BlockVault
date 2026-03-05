@@ -8,6 +8,7 @@ import toast from 'react-hot-toast';
 import { fetchWithTimeout } from '@/utils/fetchWithTimeout';
 import { getApiBase as resolveApiBase } from '@/lib/getApiBase';
 import { readStoredUser } from '@/utils/authStorage';
+import { validatePassphrase } from '@/utils/passphrase';
 
 interface LegalDocumentUploadProps {
   onSuccess: (fileId: string, fileName: string) => void;
@@ -58,6 +59,11 @@ export const LegalDocumentUpload: React.FC<LegalDocumentUploadProps> = ({ onSucc
   const handleUpload = async () => {
     if (!file || !passphrase) {
       toast.error('Please select a file and enter a passphrase');
+      return;
+    }
+    const passphraseError = validatePassphrase(passphrase);
+    if (passphraseError) {
+      toast.error(passphraseError);
       return;
     }
 
@@ -233,4 +239,3 @@ export const LegalDocumentUpload: React.FC<LegalDocumentUploadProps> = ({ onSucc
     </Card>
   );
 };
-

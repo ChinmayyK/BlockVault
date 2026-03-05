@@ -158,3 +158,15 @@ def anchor_merkle_root(root_hex: str, file_count: int) -> Optional[str]:
     except Exception as e:
         logger.warning("anchor_merkle_root failed: %s", e)
         return None
+
+
+def anchor_redaction_proof(anchor_hash: str) -> Optional[str]:
+    """Anchor a redaction proof commitment on-chain.
+
+    The commitment should be hash(original_hash + redacted_hash + proof_hash).
+    """
+    if not anchor_hash or len(anchor_hash) != 64:
+        logger.debug("anchor_redaction_proof: invalid hash %s", anchor_hash)
+        return None
+    # Reuse anchor_file for a simple bytes32 anchor when enabled.
+    return anchor_file(anchor_hash, 0, None)

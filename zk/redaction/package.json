@@ -1,0 +1,10 @@
+{
+  "name": "blockvault-redaction-zk",
+  "private": true,
+  "version": "0.1.0",
+  "description": "ZK redaction proof tooling (snarkjs + circomlibjs)",
+  "dependencies": {
+    "circomlibjs": "^0.1.7",
+    "snarkjs": "^0.7.5"
+  }
+}

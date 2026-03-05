@@ -56,12 +56,34 @@ def init_s3(app: Flask) -> None:
 
     _s3_client = boto3.client("s3", **kwargs)
 
-    # Fail-fast: verify bucket is reachable.
+    # Fail-fast: verify bucket is reachable (and create if missing in dev/minio).
     try:
         _s3_client.head_bucket(Bucket=_bucket)
         logger.info("S3 bucket '%s' is reachable.", _bucket)
+    except ClientError as exc:
+        code = exc.response.get("Error", {}).get("Code", "")
+        if code in {"404", "NoSuchBucket", "NotFound"}:
+            try:
+                _s3_client.create_bucket(Bucket=_bucket)
+                logger.info("Created missing S3 bucket '%s'.", _bucket)
+            except Exception as create_exc:
+                logger.warning(
+                    "S3 bucket '%s' missing and auto-create failed: %s. Storage operations will fail until resolved.",
+                    _bucket,
+                    create_exc,
+                )
+        else:
+            logger.warning(
+                "S3 bucket '%s' is unreachable at startup: %s. Storage operations will fail until resolved.",
+                _bucket,
+                exc,
+            )
     except Exception as exc:
-        logger.warning("S3 bucket '%s' is unreachable at startup: %s. Storage operations will fail until resolved.", _bucket, exc)
+        logger.warning(
+            "S3 bucket '%s' is unreachable at startup: %s. Storage operations will fail until resolved.",
+            _bucket,
+            exc,
+        )
 
 
 def _client():

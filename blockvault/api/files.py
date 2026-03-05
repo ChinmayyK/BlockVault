@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import json
 import io
 import os
 import time
@@ -11,6 +12,7 @@ from typing import Dict, Any, List, Optional, Tuple
 from flask import Blueprint, request, abort, send_file, current_app
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding
+import requests
 
 from ..core.security import require_auth, Role, require_role
 from ..core.db import get_db
@@ -24,6 +26,15 @@ from ..core.crypto_client import (
 from ..core import s3 as s3_mod
 from ..core import ipfs as ipfs_mod
 from ..core import onchain as onchain_mod
+from ..core.zk_redaction import (
+    build_redaction_inputs,
+    redaction_inputs_key,
+    redaction_proof_key,
+    redaction_vkey_path,
+    compute_anchor_hash,
+    compute_proof_hash,
+    verify_redaction_proof,
+)
 
 # Configurable upload size limit (default 100 MB)
 MAX_UPLOAD_BYTES = int(os.environ.get("MAX_UPLOAD_BYTES", str(100 * 1024 * 1024)))
@@ -58,6 +69,23 @@ def _check_passphrase_strength(passphrase: str) -> None:
     weak = {"password", "12345678", "qwerty12", "abcdefgh", "letmein1", "password1"}
     if passphrase.lower() in weak:
         abort(400, "passphrase too common — choose a stronger one")
+
+
+def _decrypt_file_bytes(rec: Dict[str, Any], key: str) -> bytes:
+    """Fetch encrypted blob from S3 and decrypt with the crypto daemon."""
+    try:
+        encrypted_bytes = s3_mod.download_blob(rec["enc_filename"])
+    except FileNotFoundError:
+        abort(410, "encrypted blob missing from object storage")
+    except Exception as exc:
+        abort(502, f"failed to download encrypted blob: {exc}")
+
+    try:
+        return crypto_decrypt(encrypted_bytes, key, rec.get("aad"))
+    except CryptoDaemonError:
+        abort(503, "crypto service unavailable")
+    except Exception as exc:
+        abort(400, f"decryption failed (bad key or corrupted data): {type(exc).__name__}")
 
 
 def _files_collection():
@@ -153,7 +181,7 @@ def _serialize_share(doc: Dict[str, Any], include_encrypted: bool = True) -> Dic
 @bp.post("/", strict_slashes=False)
 @require_auth
 def upload_file():  # type: ignore
-    ensure_role(Role.OWNER)
+    ensure_role(Role.USER)
     if "file" not in request.files:
         abort(400, "file part required (multipart/form-data)")
     up_file = request.files["file"]
@@ -247,7 +275,11 @@ def upload_file():  # type: ignore
         abort(503, "crypto service unavailable")
 
     # Upload encrypted blob to S3
-    s3_mod.upload_blob(enc_filename, encrypted_bytes)
+    try:
+        s3_mod.upload_blob(enc_filename, encrypted_bytes)
+    except Exception as exc:
+        current_app.logger.warning("S3 upload failed: %s", exc)
+        abort(503, "object storage unavailable")
 
     sha256 = hashlib.sha256(data).hexdigest()
 
@@ -402,10 +434,54 @@ def download_file(file_id: str):  # type: ignore
         abort(500, "download failed (internal error)")
 
 
+@bp.get("/<file_id>/content", strict_slashes=False)
+@require_auth
+def fetch_file_content(file_id: str):  # type: ignore
+    """Return decrypted file bytes for inline rendering (no cache)."""
+    key = request.args.get("key") or request.headers.get("X-File-Key")
+    if not key:
+        abort(400, "key required (query ?key= or X-File-Key header)")
+
+    rec, canonical_id = _lookup_file(file_id)
+    owner = rec.get("owner")
+    requester = getattr(request, "address").lower()
+    if owner != requester:
+        share = _shares_collection().find_one({"file_id": canonical_id, "recipient": requester})
+        if not share:
+            abort(404, "file not found")
+        expires_at = share.get("expires_at")
+        if expires_at and int(time.time() * 1000) > int(expires_at):
+            abort(403, "share expired")
+
+    data = _decrypt_file_bytes(rec, key)
+
+    filename = rec.get("original_name", "document")
+    mimetype = "application/octet-stream"
+    lower = filename.lower()
+    if lower.endswith(".pdf"):
+        mimetype = "application/pdf"
+    elif lower.endswith(".docx"):
+        mimetype = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    elif lower.endswith(".txt"):
+        mimetype = "text/plain; charset=utf-8"
+
+    resp = send_file(
+        io.BytesIO(data),
+        as_attachment=False,
+        download_name=filename,
+        mimetype=mimetype,
+    )
+    # Disable caching
+    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    resp.headers["Pragma"] = "no-cache"
+    resp.headers["Expires"] = "0"
+    return resp
+
+
 @bp.get("/", strict_slashes=False)
 @require_auth
 def list_files():  # type: ignore
-    ensure_role(Role.OWNER)
+    ensure_role(Role.USER)
     # Simple listing for the owner; optional limit & after (created_at cursor)
     try:
         limit = int(request.args.get("limit", "50"))
@@ -450,6 +526,8 @@ def list_files():  # type: ignore
                 "anchor_tx": doc.get("anchor_tx"),
                 "gateway_url": ipfs_mod.gateway_url(doc.get("cid")) if doc.get("cid") else None,
                 "folder": doc.get("folder"),
+                "redaction_status": doc.get("redaction_status"),
+                "redacted_from": doc.get("redacted_from"),
             })
     except Exception as e:
         abort(500, f"list failed: {e}")
@@ -465,7 +543,7 @@ def list_files():  # type: ignore
 @bp.delete("/<file_id>", strict_slashes=False)
 @require_auth
 def delete_file(file_id: str):  # type: ignore
-    ensure_role(Role.OWNER)
+    ensure_role(Role.USER)
     owner = getattr(request, "address").lower()  # Normalize to lowercase
     oid = file_id
     try:
@@ -504,7 +582,7 @@ def update_file(file_id: str):  # type: ignore
 
     Only the owner may update. Name change does not affect stored encrypted blob.
     """
-    ensure_role(Role.OWNER)
+    ensure_role(Role.USER)
     owner = getattr(request, "address").lower()  # Normalize to lowercase
     rec, canonical_id = _lookup_file(file_id)
     if rec.get("owner") != owner:
@@ -540,7 +618,7 @@ def update_file(file_id: str):  # type: ignore
 @require_auth
 def list_folders():  # type: ignore
     """List distinct non-null folder names for current owner."""
-    ensure_role(Role.OWNER)
+    ensure_role(Role.USER)
     owner = getattr(request, "address").lower()  # Normalize to lowercase
     coll = _files_collection()
     folders: List[str] = []
@@ -565,7 +643,7 @@ def list_folders():  # type: ignore
 @bp.get("/<file_id>/verify", strict_slashes=False)
 @require_auth
 def verify_file(file_id: str):  # type: ignore
-    ensure_role(Role.OWNER)
+    ensure_role(Role.USER)
     owner = getattr(request, "address").lower()
     oid = file_id
     try:
@@ -607,6 +685,356 @@ def verify_file(file_id: str):  # type: ignore
     return result
 
 
+@bp.post("/<file_id>/analyze-redaction", strict_slashes=False)
+@require_auth
+def analyze_redaction(file_id: str):  # type: ignore
+    """Proxy to redactor service for entity detection."""
+    ensure_role(Role.USER)
+    rec, canonical_id = _lookup_file(file_id)
+    owner = getattr(request, "address").lower()
+    if rec.get("owner") != owner:
+        abort(404, "file not found")
+
+    key = request.form.get("key") or request.headers.get("X-File-Key")
+    if not key:
+        abort(400, "key required (form key= or X-File-Key header)")
+
+    decrypted_bytes = _decrypt_file_bytes(rec, key)
+    redactor_url = current_app.config.get("REDACTOR_SERVICE_URL")
+    if not redactor_url:
+        abort(503, "redactor service not configured")
+
+    filename = rec.get("original_name", "document.bin")
+    try:
+        resp = requests.post(
+            f"{redactor_url}/analyze",
+            files={"file": (filename, decrypted_bytes)},
+            timeout=30,
+        )
+        resp.raise_for_status()
+    except requests.RequestException as exc:
+        abort(502, f"redactor service error: {exc}")
+
+    return resp.json()
+
+
+@bp.post("/<file_id>/apply-redaction", strict_slashes=False)
+@require_auth
+def apply_redaction(file_id: str):  # type: ignore
+    """Apply redaction via redactor service and generate a ZK proof."""
+    ensure_role(Role.USER)
+    rec, canonical_id = _lookup_file(file_id)
+    owner = getattr(request, "address").lower()
+    if rec.get("owner") != owner:
+        abort(404, "file not found")
+
+    key = request.form.get("key") or request.headers.get("X-File-Key")
+    if not key:
+        abort(400, "key required (form key= or X-File-Key header)")
+
+    entities_json = request.form.get("entities")
+    if not entities_json:
+        abort(400, "entities JSON required")
+
+    decrypted_bytes = _decrypt_file_bytes(rec, key)
+    redactor_url = current_app.config.get("REDACTOR_SERVICE_URL")
+    if not redactor_url:
+        abort(503, "redactor service not configured")
+
+    filename = rec.get("original_name", "document.bin")
+    try:
+        resp = requests.post(
+            f"{redactor_url}/redact",
+            files={"file": (filename, decrypted_bytes)},
+            data={"entities": entities_json, "response_mode": "json"},
+            timeout=120,
+        )
+        resp.raise_for_status()
+    except requests.RequestException as exc:
+        abort(502, f"redactor service error: {exc}")
+
+    payload = resp.json()
+    try:
+        redacted_bytes = base64.b64decode(payload["redacted_b64"])
+    except Exception:
+        abort(502, "invalid redactor response (missing redacted_b64)")
+
+    original_sha256 = hashlib.sha256(decrypted_bytes).hexdigest()
+    redacted_sha256 = hashlib.sha256(redacted_bytes).hexdigest()
+    if payload.get("original_hash") and payload.get("original_hash") != original_sha256:
+        abort(502, "redactor original hash mismatch")
+    if payload.get("redacted_hash") and payload.get("redacted_hash") != redacted_sha256:
+        abort(502, "redactor redacted hash mismatch")
+
+    try:
+        proof_inputs = build_redaction_inputs(decrypted_bytes, redacted_bytes)
+    except ValueError as exc:
+        abort(413, f"redaction proof capacity exceeded: {exc}")
+    except Exception as exc:
+        abort(500, f"failed to prepare redaction proof inputs: {exc}")
+
+    enc_filename = generate_encrypted_filename()
+    try:
+        encrypted_bytes = crypto_encrypt(redacted_bytes, key, rec.get("aad"))
+    except CryptoDaemonError:
+        abort(503, "crypto service unavailable")
+
+    s3_mod.upload_blob(enc_filename, encrypted_bytes)
+
+    redacted_name = payload.get("filename") or filename
+    record = {
+        "owner": owner,
+        "original_name": redacted_name,
+        "enc_filename": enc_filename,
+        "size": len(redacted_bytes),
+        "created_at": int(time.time() * 1000),
+        "aad": rec.get("aad"),
+        "sha256": redacted_sha256,
+        "cid": None,
+        "anchor_tx": None,
+        "ipfs_status": "pending",
+        "anchor_status": "pending",
+        "folder": rec.get("folder"),
+        "owner_encrypted_key": rec.get("owner_encrypted_key"),
+        "redaction_proof": {
+            "redaction_mask": proof_inputs.get("redaction_mask"),
+            "chunk_size": proof_inputs.get("chunk_size"),
+            "block_size": proof_inputs.get("block_size"),
+            "chunk_count": proof_inputs.get("chunk_count"),
+            "modified_chunks": proof_inputs.get("modified_chunks"),
+            "original_length": proof_inputs.get("original_length"),
+            "redacted_length": proof_inputs.get("redacted_length"),
+        },
+        "proof_type": "groth16",
+        "proof_version": "2",
+        "redacted_from": canonical_id,
+        "source_sha256": original_sha256,
+        "redaction_status": "pending",
+    }
+
+    ins = _files_collection().insert_one(record)
+    new_file_id = str(ins.inserted_id)
+
+    # Store proof inputs in object storage for async generation
+    inputs_key = redaction_inputs_key(new_file_id)
+    proof_location = redaction_proof_key(new_file_id)
+    try:
+        s3_mod.upload_blob(inputs_key, json.dumps(proof_inputs).encode("utf-8"))
+        _files_collection().update_one(
+            {"_id": ins.inserted_id},
+            {"$set": {"redaction_inputs_location": inputs_key, "redaction_proof.proof_location": proof_location}},
+        )
+    except Exception as exc:
+        _files_collection().update_one(
+            {"_id": ins.inserted_id},
+            {"$set": {"redaction_status": "failed", "redaction_error": str(exc)}},
+        )
+        abort(500, f"failed to store redaction proof inputs: {exc}")
+
+    # Queue async proof generation
+    try:
+        from ..core.tasks import generate_redaction_proof_task
+        generate_redaction_proof_task.delay(new_file_id)
+    except Exception as exc:
+        current_app.logger.warning("Failed to enqueue redaction proof task: %s", exc)
+
+    try:
+        from ..core.tasks import pin_to_ipfs
+        pin_to_ipfs.delay(new_file_id)
+    except Exception as exc:
+        current_app.logger.warning("Failed to enqueue IPFS task: %s", exc)
+
+    log_event("redaction", target_id=new_file_id, details={"source": canonical_id})
+
+    return {
+        "file_id": new_file_id,
+        "name": redacted_name,
+        "sha256": redacted_sha256,
+        "proof_type": record["proof_type"],
+        "proof_version": record["proof_version"],
+        "redaction_mask": proof_inputs.get("redaction_mask"),
+        "redaction_status": "pending",
+        "proof_location": proof_location,
+        "source_file_id": canonical_id,
+    }
+
+
+@bp.get("/<file_id>/verify-redaction", strict_slashes=False)
+@require_auth
+def verify_redaction(file_id: str):  # type: ignore
+    """Verify a stored redaction proof."""
+    ensure_role(Role.USER)
+    owner = getattr(request, "address").lower()
+    oid = file_id
+    try:
+        from bson import ObjectId  # type: ignore
+        oid = ObjectId(file_id)  # type: ignore
+    except Exception:
+        pass
+
+    rec = _files_collection().find_one({"_id": oid, "owner": owner})
+    if not rec:
+        abort(404, "file not found")
+
+    status = rec.get("redaction_status", "unknown")
+    proof_payload = rec.get("redaction_proof") or {}
+    if not isinstance(proof_payload, dict):
+        proof_payload = {}
+
+    def _base_response(valid: bool, package: Optional[Dict[str, Any]] = None, modified: Optional[List[int]] = None):
+        return {
+            "file_id": file_id,
+            "proof_valid": valid,
+            "valid_proof": valid,  # backward compatibility
+            "status": status,
+            "original_hash": rec.get("source_sha256") or proof_payload.get("original_hash"),
+            "redacted_hash": rec.get("sha256") or proof_payload.get("redacted_hash"),
+            "original_root": (package or {}).get("original_root") or proof_payload.get("original_root"),
+            "redacted_root": (package or {}).get("redacted_root") or proof_payload.get("redacted_root"),
+            "chunk_count": (package or {}).get("chunk_count") or proof_payload.get("chunk_count"),
+            "modified_chunks": modified or proof_payload.get("modified_chunks"),
+            "proof_type": rec.get("proof_type"),
+            "proof_version": rec.get("proof_version"),
+            "anchor_hash": proof_payload.get("anchor_hash"),
+            "anchor_tx": rec.get("redaction_anchor_tx"),
+            "proof_location": proof_payload.get("proof_location"),
+            "proof_hash": proof_payload.get("proof_hash"),
+        }
+
+    if status != "complete":
+        return _base_response(False)
+
+    proof_location = proof_payload.get("proof_location")
+    if not proof_location:
+        return _base_response(False)
+
+    try:
+        proof_package = json.loads(s3_mod.download_blob(proof_location).decode("utf-8"))
+    except Exception:
+        return _base_response(False)
+
+    redaction_vkey = redaction_vkey_path()
+    valid = True
+
+    chunk_count = proof_package.get("chunk_count")
+    original_chunk_hashes = proof_package.get("original_chunk_hashes") or []
+    redacted_chunk_hashes = proof_package.get("redacted_chunk_hashes") or []
+    if chunk_count is None:
+        chunk_count = len(original_chunk_hashes)
+
+    if not isinstance(chunk_count, int) or chunk_count <= 0:
+        valid = False
+    if len(original_chunk_hashes) != chunk_count or len(redacted_chunk_hashes) != chunk_count:
+        valid = False
+
+    chunk_size = proof_package.get("chunk_size")
+    block_size = proof_package.get("block_size")
+    if not isinstance(chunk_size, int) or not isinstance(block_size, int) or chunk_size % block_size != 0:
+        valid = False
+        blocks_per_chunk = 0
+    else:
+        blocks_per_chunk = chunk_size // block_size
+
+    modified_chunks_data = proof_package.get("modified_chunks") or []
+    modified_indices: List[int] = []
+    if not isinstance(modified_chunks_data, list):
+        valid = False
+    else:
+        for entry in modified_chunks_data:
+            if not isinstance(entry, dict):
+                valid = False
+                break
+            idx = entry.get("index")
+            if not isinstance(idx, int):
+                valid = False
+                break
+            modified_indices.append(idx)
+
+    modified_set = set(modified_indices)
+    if len(modified_set) != len(modified_indices):
+        valid = False
+
+    if valid:
+        # Ensure unmodified chunks remain identical
+        for idx in range(chunk_count):
+            if idx in modified_set:
+                continue
+            if original_chunk_hashes[idx] != redacted_chunk_hashes[idx]:
+                valid = False
+                break
+
+    if valid:
+        for entry in modified_chunks_data:
+            idx = entry.get("index")
+            mask_blocks = entry.get("mask_blocks") or []
+            proof = entry.get("proof")
+            public_signals = entry.get("public_signals")
+
+            if not isinstance(idx, int) or idx < 0 or idx >= chunk_count:
+                valid = False
+                break
+            if not isinstance(mask_blocks, list) or len(mask_blocks) != blocks_per_chunk:
+                valid = False
+                break
+            if not isinstance(public_signals, list) or len(public_signals) != 2 + len(mask_blocks):
+                valid = False
+                break
+            if not proof:
+                valid = False
+                break
+
+            try:
+                orig_int = int(str(original_chunk_hashes[idx]), 16)
+                red_int = int(str(redacted_chunk_hashes[idx]), 16)
+            except Exception:
+                valid = False
+                break
+
+            if str(orig_int) != str(public_signals[0]) or str(red_int) != str(public_signals[1]):
+                valid = False
+                break
+
+            for mask_idx, mask_val in enumerate(mask_blocks):
+                if str(int(mask_val)) != str(public_signals[2 + mask_idx]):
+                    valid = False
+                    break
+            if not valid:
+                break
+
+            if not verify_redaction_proof(proof, public_signals, vkey_path=redaction_vkey):
+                valid = False
+                break
+
+    if valid:
+        try:
+            computed_proof_hash = compute_proof_hash(proof_package)
+        except Exception:
+            computed_proof_hash = None
+            valid = False
+
+        if computed_proof_hash:
+            stored_proof_hash = proof_payload.get("proof_hash")
+            if stored_proof_hash and stored_proof_hash != computed_proof_hash:
+                valid = False
+
+            try:
+                computed_anchor = compute_anchor_hash(
+                    proof_package.get("original_root", ""),
+                    proof_package.get("redacted_root", ""),
+                    computed_proof_hash,
+                )
+            except Exception:
+                computed_anchor = None
+                valid = False
+
+            if computed_anchor:
+                stored_anchor = proof_payload.get("anchor_hash")
+                if stored_anchor and stored_anchor != computed_anchor:
+                    valid = False
+
+    return _base_response(valid, proof_package, sorted(modified_set))
+
+
 @bp.get("/<file_id>/key", strict_slashes=False)
 @require_auth
 def get_owner_encrypted_key(file_id: str):  # type: ignore
@@ -616,7 +1044,7 @@ def get_owner_encrypted_key(file_id: str):  # type: ignore
     the owner's public key and must be decrypted client-side before
     re-encrypting for recipients.
     """
-    ensure_role(Role.OWNER)
+    ensure_role(Role.USER)
     owner = getattr(request, "address").lower()
     
     rec, canonical_id = _lookup_file(file_id)
@@ -637,7 +1065,7 @@ def get_owner_encrypted_key(file_id: str):  # type: ignore
 @bp.post("/<file_id>/share", strict_slashes=False)
 @require_auth
 def share_file(file_id: str):  # type: ignore
-    ensure_role(Role.OWNER)
+    ensure_role(Role.USER)
     owner = getattr(request, "address").lower()
 
     try:
@@ -814,7 +1242,7 @@ def _get_share_by_id(share_id: str) -> Optional[Dict[str, Any]]:
 @bp.get("/shared", strict_slashes=False)
 @require_auth
 def list_shared_with_me():  # type: ignore
-    ensure_role(Role.VIEWER)
+    ensure_role(Role.USER)
     address = getattr(request, "address").lower()  # Normalize to lowercase
     now_ms = int(time.time() * 1000)
     docs = _collect_shares({"recipient": address})
@@ -831,7 +1259,7 @@ def list_shared_with_me():  # type: ignore
 @bp.get("/shares/outgoing", strict_slashes=False)
 @require_auth
 def list_outgoing_shares():  # type: ignore
-    ensure_role(Role.OWNER)
+    ensure_role(Role.USER)
     owner = getattr(request, "address").lower()  # Normalize to lowercase
     docs = _collect_shares({"owner": owner})
     results = [_serialize_share(_merge_metadata(doc), include_encrypted=False) for doc in docs]

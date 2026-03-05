@@ -81,13 +81,5 @@ export const fileService = {
     return response.data;
   },
 
-  async submitRedaction(payload: import('@/types/redaction').RedactionPayload) {
-    const response = await apiClient.post(API_ENDPOINTS.FILES.REDACT, payload, {
-      baseURL: '/',
-      withCredentials: false,
-    });
-    return response.data;
-  },
 };
-
 

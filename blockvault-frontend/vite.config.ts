@@ -19,47 +19,36 @@ export default defineConfig(() => {
     );
   }
 
+  const htmlBypass = (req: { headers?: Record<string, string | string[] | undefined> }) => {
+    const accept = req.headers?.accept;
+    const acceptValue = Array.isArray(accept) ? accept.join(",") : accept || "";
+    if (acceptValue.includes("text/html")) {
+      return "/index.html";
+    }
+    return undefined;
+  };
+  const proxyTarget = (target: string) =>
+    ({
+      target,
+      changeOrigin: true,
+      // Vite's proxy type doesn't expose `bypass`, but the dev server supports it.
+      bypass: htmlBypass,
+    } as any);
+
   return {
     server: {
       host: "::",
       port: 3000,
       proxy: {
-        '/api': {
-          target: 'http://localhost:5001',
-          changeOrigin: true,
-        },
-        '/files': {
-          target: 'http://localhost:5001',
-          changeOrigin: true,
-        },
-        '/users': {
-          target: 'http://localhost:5001',
-          changeOrigin: true,
-        },
-        '/cases': {
-          target: 'http://localhost:5001',
-          changeOrigin: true,
-        },
-        '/blockchain': {
-          target: 'http://localhost:5001',
-          changeOrigin: true,
-        },
-        '/auth': {
-          target: 'http://localhost:5001',
-          changeOrigin: true,
-        },
-        '/documents': {
-          target: 'http://localhost:5001',
-          changeOrigin: true,
-        },
-        '/signature-requests': {
-          target: 'http://localhost:5001',
-          changeOrigin: true,
-        },
-        '/signature-requests-sent': {
-          target: 'http://localhost:5001',
-          changeOrigin: true,
-        },
+        '/api': proxyTarget('http://localhost:5001'),
+        '/files': proxyTarget('http://localhost:5001'),
+        '/users': proxyTarget('http://localhost:5001'),
+        '/cases': proxyTarget('http://localhost:5001'),
+        '/blockchain': proxyTarget('http://localhost:5001'),
+        '/auth': proxyTarget('http://localhost:5001'),
+        '/documents': proxyTarget('http://localhost:5001'),
+        '/signature-requests': proxyTarget('http://localhost:5001'),
+        '/signature-requests-sent': proxyTarget('http://localhost:5001'),
       },
     },
     plugins,

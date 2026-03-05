@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
 import { GlowingSeparator } from '@/components/ui/glowing-separator';
+import { validatePassphrase } from '@/utils/passphrase';
 
 interface FileUploadProps {
   onClose: () => void;
@@ -64,6 +65,11 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onClose }) => {
   const handleUpload = async () => {
     if (!file || !passphrase) {
       setErrorMessage('Please select a file and enter a passphrase');
+      return;
+    }
+    const passphraseError = validatePassphrase(passphrase);
+    if (passphraseError) {
+      setErrorMessage(passphraseError);
       return;
     }
 

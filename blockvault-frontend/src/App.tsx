@@ -20,6 +20,7 @@ const CasesPage = lazy(() => import("./pages/CasesPage"));
 const BlockchainPage = lazy(() => import("./pages/BlockchainPage"));
 const SettingsPage = lazy(() => import("./pages/SettingsPage"));
 const NotFoundPage = lazy(() => import("./pages/NotFoundPage"));
+const RedactPage = lazy(() => import("./pages/RedactPage"));
 
 // Import BlockVault contexts
 import { AuthProvider } from "@/contexts/AuthContext";
@@ -60,89 +61,97 @@ const App = () => (
             <RBACProvider>
               <CaseProvider>
                 <TooltipProvider>
-                <Toaster />
-                <Sonner />
-                <HotToaster
-                  position="top-right"
-                  toastOptions={{
-                    duration: 4000,
-                    style: {
-                      background: '#0a0a0a',
-                      color: '#ffffff',
-                      border: '1px solid #1f6feb',
-                    },
-                    success: {
-                      iconTheme: {
-                        primary: '#22C55E',
-                        secondary: '#ffffff',
+                  <Toaster />
+                  <Sonner />
+                  <HotToaster
+                    position="top-right"
+                    toastOptions={{
+                      duration: 4000,
+                      style: {
+                        background: '#0a0a0a',
+                        color: '#ffffff',
+                        border: '1px solid #1f6feb',
                       },
-                    },
-                    error: {
-                      iconTheme: {
-                        primary: '#EF4444',
-                        secondary: '#ffffff',
+                      success: {
+                        iconTheme: {
+                          primary: '#22C55E',
+                          secondary: '#ffffff',
+                        },
                       },
-                    },
-                  }}
-                />
-                <BrowserRouter>
-                  <Suspense fallback={<PageLoader />}>
-                    <Routes>
-                      <Route path="/" element={<IndexPage />} />
-                      <Route path="/login" element={<LoginPage />} />
-                      <Route path="/learn-more" element={<LearnMorePage />} />
-                      <Route 
-                        path="/files" 
-                        element={
-                          <ProtectedRoute>
-                            <MainLayout><DashboardPage /></MainLayout>
-                          </ProtectedRoute>
-                        } 
-                      />
-                      <Route 
-                        path="/dashboard" 
-                        element={
-                          <ProtectedRoute>
-                            <MainLayout><DashboardPage /></MainLayout>
-                          </ProtectedRoute>
-                        } 
-                      />
-                      <Route 
-                        path="/legal" 
-                        element={
-                          <ProtectedRoute>
-                            <MainLayout><LegalPage /></MainLayout>
-                          </ProtectedRoute>
-                        } 
-                      />
-                      <Route 
-                        path="/cases" 
-                        element={
-                          <ProtectedRoute>
-                            <MainLayout><CasesPage /></MainLayout>
-                          </ProtectedRoute>
-                        } 
-                      />
-                      <Route 
-                        path="/blockchain" 
-                        element={
-                          <ProtectedRoute>
-                            <MainLayout><BlockchainPage /></MainLayout>
-                          </ProtectedRoute>
-                        } 
-                      />
-                      <Route 
-                        path="/settings" 
-                        element={
-                          <ProtectedRoute>
-                            <MainLayout><SettingsPage /></MainLayout>
-                          </ProtectedRoute>
-                        } 
-                      />
-                      <Route path="*" element={<NotFoundPage />} />
-                    </Routes>
-                  </Suspense>
-                </BrowserRouter>
+                      error: {
+                        iconTheme: {
+                          primary: '#EF4444',
+                          secondary: '#ffffff',
+                        },
+                      },
+                    }}
+                  />
+                  <BrowserRouter future={{ v7_relativeSplatPath: true }}>
+                    <Suspense fallback={<PageLoader />}>
+                      <Routes>
+                        <Route path="/" element={<IndexPage />} />
+                        <Route path="/login" element={<LoginPage />} />
+                        <Route path="/learn-more" element={<LearnMorePage />} />
+                        <Route
+                          path="/files"
+                          element={
+                            <ProtectedRoute>
+                              <MainLayout><DashboardPage /></MainLayout>
+                            </ProtectedRoute>
+                          }
+                        />
+                        <Route
+                          path="/dashboard"
+                          element={
+                            <ProtectedRoute>
+                              <MainLayout><DashboardPage /></MainLayout>
+                            </ProtectedRoute>
+                          }
+                        />
+                        <Route
+                          path="/legal"
+                          element={
+                            <ProtectedRoute>
+                              <MainLayout><LegalPage /></MainLayout>
+                            </ProtectedRoute>
+                          }
+                        />
+                        <Route
+                          path="/cases"
+                          element={
+                            <ProtectedRoute>
+                              <MainLayout><CasesPage /></MainLayout>
+                            </ProtectedRoute>
+                          }
+                        />
+                        <Route
+                          path="/blockchain"
+                          element={
+                            <ProtectedRoute>
+                              <MainLayout><BlockchainPage /></MainLayout>
+                            </ProtectedRoute>
+                          }
+                        />
+                        <Route
+                          path="/settings"
+                          element={
+                            <ProtectedRoute>
+                              <MainLayout><SettingsPage /></MainLayout>
+                            </ProtectedRoute>
+                          }
+                        />
+                        <Route
+                          path="/redact/:fileId"
+                          element={
+                            <ProtectedRoute>
+                              <MainLayout><RedactPage /></MainLayout>
+                            </ProtectedRoute>
+                          }
+                        />
+                        <Route path="*" element={<NotFoundPage />} />
+                      </Routes>
+                    </Suspense>
+                  </BrowserRouter>
                 </TooltipProvider>
               </CaseProvider>
             </RBACProvider>

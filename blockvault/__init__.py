@@ -104,6 +104,7 @@ def create_app() -> Flask:
         S3_ENDPOINT=cfg.s3_endpoint,
         S3_ACCESS_KEY=cfg.s3_access_key,
         S3_SECRET_KEY=cfg.s3_secret_key,
+        REDACTOR_SERVICE_URL=cfg.redactor_service_url,
     )
 
     # -----------------------------------------------------------------
@@ -206,6 +207,9 @@ def create_app() -> Flask:
     @app.errorhandler(413)
     @app.errorhandler(415)
     @app.errorhandler(429)  # Rate limit exceeded
+    @app.errorhandler(502)
+    @app.errorhandler(503)
+    @app.errorhandler(504)
     @app.errorhandler(500)
     def json_error(err):  # type: ignore
         code = getattr(err, 'code', 500)
@@ -303,6 +307,9 @@ def create_app() -> Flask:
                 "/files (GET list)",
                 "/files/<id> (DELETE)",
                 "/files/<id>/verify (GET verify integrity + Merkle proof)",
+                "/files/<id>/verify-redaction (GET verify redaction proof)",
+                "/files/<id>/analyze-redaction (POST detect entities)",
+                "/files/<id>/apply-redaction (POST redact + ZK proof)",
                 "/files/<id>/share (POST create/update share)",
                 "/files/shared (GET shares received)",
                 "/files/shares/outgoing (GET shares sent)",

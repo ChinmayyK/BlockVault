@@ -29,7 +29,6 @@ export const API_ENDPOINTS = {
     SHARE: (id: string) => `/files/${id}/share`,
     SHARED: '/files/shared',
     SHARES_OUTGOING: '/files/shares/outgoing',
-    REDACT: '/files/redact',
   },
   CASES: {
     LIST: '/cases',
@@ -39,7 +38,6 @@ export const API_ENDPOINTS = {
   },
   LEGAL: {
     NOTARIZE: '/legal/notarize',
-    REDACT: '/legal/redact',
     SIGN: '/legal/sign',
     ANALYZE: '/legal/analyze',
   },
@@ -83,5 +81,4 @@ export const UI = {
   DEBOUNCE_DELAY: 300,
   ANIMATION_DURATION: 200,
 } as const;
-
 

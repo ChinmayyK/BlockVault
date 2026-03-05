@@ -7,6 +7,7 @@ import { fetchWithTimeout } from '@/utils/fetchWithTimeout';
 import { getApiBase } from '@/lib/getApiBase';
 import { readStoredUser } from '@/utils/authStorage';
 import { storeLegalDocumentKey } from '@/utils/legalDocumentKeys';
+import { validatePassphrase } from '@/utils/passphrase';
 import toast from 'react-hot-toast';
 import { cn } from '@/lib/utils';
 
@@ -69,6 +70,12 @@ export const LegalDocumentUploadModal: React.FC<LegalDocumentUploadModalProps> =
   const handleUpload = async () => {
     if (!selectedFile || !passphrase) {
       toast.error('Please select a file and enter a passphrase');
+      return;
+    }
+    const passphraseError = validatePassphrase(passphrase);
+    if (passphraseError) {
+      setErrorMessage(passphraseError);
+      toast.error(passphraseError);
       return;
     }
 
@@ -274,4 +281,3 @@ export const LegalDocumentUploadModal: React.FC<LegalDocumentUploadModalProps> =
     </LegalModalFrame>
   );
 };
-

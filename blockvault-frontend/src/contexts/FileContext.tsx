@@ -299,7 +299,26 @@ export const FileProvider: React.FC<FileProviderProps> = ({ children }) => {
           clearStoredUser();
           throw new Error('Session expired. Please login again.');
         }
-        throw new Error('Upload failed');
+        let errorMessage = `Upload failed with status ${response.status}`;
+        try {
+          const contentType = response.headers.get('content-type') || '';
+          if (contentType.includes('application/json')) {
+            const data = await response.json();
+            if (data?.error) {
+              errorMessage = data.error;
+            } else {
+              errorMessage = JSON.stringify(data);
+            }
+          } else {
+            const text = await response.text();
+            if (text) {
+              errorMessage = text;
+            }
+          }
+        } catch (err) {
+          // ignore parsing errors
+        }
+        throw new Error(errorMessage);
       }
 
       return response.json();

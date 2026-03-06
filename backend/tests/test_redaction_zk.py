@@ -99,3 +99,4 @@ def test_redaction_large_document_chunking():
     proof_package = bundle["proof_package"]
     assert proof_package.get("chunk_count", 0) >= 3
     assert len(proof_package.get("modified_chunks", [])) >= 1
+

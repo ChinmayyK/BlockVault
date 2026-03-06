@@ -97,4 +97,3 @@ export interface UserRoleContext {
   organizations: OrgMembership[];
   workspaces: WorkspaceMembership[];
 }
-

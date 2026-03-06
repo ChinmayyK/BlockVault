@@ -189,4 +189,3 @@ export const DocumentComparison: React.FC<DocumentComparisonProps> = ({
     </div>
   );
 };
-

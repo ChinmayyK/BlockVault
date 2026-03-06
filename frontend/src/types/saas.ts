@@ -67,3 +67,4 @@ export interface AnalyticsSummary {
   activeComplianceProfile: string;
   certificateRate: number; // percentage
 }
+

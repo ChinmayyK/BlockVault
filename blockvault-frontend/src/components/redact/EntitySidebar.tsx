@@ -12,6 +12,8 @@ interface EntitySidebarProps {
     onDeleteManualEntity: (id: string) => void;
     onApplyRedaction: () => void;
     isApplying: boolean;
+    hoveredEntityId?: string | null;
+    onHoverEntity?: (id: string | null) => void;
 }
 
 export function EntitySidebar({
@@ -20,7 +22,9 @@ export function EntitySidebar({
     onToggleEntity,
     onDeleteManualEntity,
     onApplyRedaction,
-    isApplying
+    isApplying,
+    hoveredEntityId,
+    onHoverEntity
 }: EntitySidebarProps) {
 
     // Group entities by type
@@ -93,13 +97,22 @@ export function EntitySidebar({
                                             return (
                                                 <div
                                                     key={ent.id || `${ent.entity_type}-${idx}`}
-                                                    className={`flex flex-col gap-1 p-2 rounded-md transition-colors ${isChecked ? 'bg-primary/5 border border-primary/20' : 'bg-muted/30 border border-transparent'} hover:bg-muted/50`}
+                                                    className={`flex flex-col gap-1 p-2 rounded-md transition-colors cursor-pointer ${isChecked ? 'bg-primary/5 border border-primary/20' : 'bg-muted/30 border border-transparent'} ${hoveredEntityId === ent.id ? 'bg-blue-500/10 border-blue-500/50' : 'hover:bg-muted/50'}`}
+                                                    onMouseEnter={() => onHoverEntity?.(ent.id!)}
+                                                    onMouseLeave={() => onHoverEntity?.(null)}
+                                                    onClick={() => {
+                                                        if (ent.id) {
+                                                            const el = document.getElementById(`entity-${ent.id}`);
+                                                            if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                                        }
+                                                    }}
                                                 >
                                                     <div className="flex items-start gap-3">
                                                         <Checkbox
                                                             className="mt-1"
                                                             checked={isChecked}
                                                             onCheckedChange={(c) => onToggleEntity(ent.id!, c === true)}
+                                                            onClick={(e) => e.stopPropagation()}
                                                         />
                                                         <div className="flex-1 min-w-0">
                                                             <div className="flex items-center justify-between">
@@ -111,7 +124,10 @@ export function EntitySidebar({
                                                                 )}
                                                                 {isManual && (
                                                                     <button
-                                                                        onClick={() => onDeleteManualEntity(ent.id!)}
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation();
+                                                                            onDeleteManualEntity(ent.id!);
+                                                                        }}
                                                                         className="text-muted-foreground hover:text-destructive"
                                                                     >
                                                                         <Trash2 className="w-3.5 h-3.5" />

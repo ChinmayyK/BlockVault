@@ -37,6 +37,10 @@ export default function RedactPage() {
     const [isApplying, setIsApplying] = useState(false);
     const canContinuePassphrase = passphraseInput.trim().length > 0;
 
+    // Selection and Hover State
+    const [selectedBoxId, setSelectedBoxId] = useState<string | null>(null);
+    const [hoveredEntityId, setHoveredEntityId] = useState<string | null>(null);
+
     // Toolbar modes
     const [activeTool, setActiveTool] = useState<"select" | "draw">("select");
     const [previewMode, setPreviewMode] = useState(false);
@@ -160,6 +164,7 @@ export default function RedactPage() {
 
     const handleDeleteManualEntity = (id: string) => {
         updateManualBoxesWithHistory(manualBoxes.filter(b => b.id !== id));
+        if (selectedBoxId === id) setSelectedBoxId(null);
     };
 
     const handleUndo = () => {
@@ -194,10 +199,16 @@ export default function RedactPage() {
             if (e.key === "Enter") {
                 handleApplyRedaction();
             }
+
+            if (e.key === "Delete" || e.key === "Backspace") {
+                if (selectedBoxId) {
+                    handleDeleteManualEntity(selectedBoxId);
+                }
+            }
         };
         window.addEventListener("keydown", handleKeyDown);
         return () => window.removeEventListener("keydown", handleKeyDown);
-    }, [historyIndex, manualHistory]);
+    }, [historyIndex, manualHistory, selectedBoxId]);
 
     // Apply Redactions
     const handleApplyRedaction = async () => {
@@ -409,6 +420,10 @@ export default function RedactPage() {
                             }}
                             activeTool={activeTool}
                             previewMode={previewMode}
+                            selectedBoxId={selectedBoxId}
+                            hoveredEntityId={hoveredEntityId}
+                            onSelectBox={setSelectedBoxId}
+                            onHoverEntity={setHoveredEntityId}
                         />
                     ) : (
                         <div className="flex-1 flex items-center justify-center bg-muted/10 text-muted-foreground p-8 text-center">
@@ -427,6 +442,8 @@ export default function RedactPage() {
                             onDeleteManualEntity={handleDeleteManualEntity}
                             onApplyRedaction={handleApplyRedaction}
                             isApplying={isApplying}
+                            hoveredEntityId={hoveredEntityId}
+                            onHoverEntity={setHoveredEntityId}
                         />
                     </div>
                 )}
@@ -459,11 +476,10 @@ export default function RedactPage() {
                                 Cancel
                             </button>
                             <button
-                                className={`px-4 py-2 text-sm rounded-lg font-medium transition-colors ${
-                                    canContinuePassphrase
+                                className={`px-4 py-2 text-sm rounded-lg font-medium transition-colors ${canContinuePassphrase
                                         ? "bg-blue-600 text-white border border-blue-500 hover:bg-blue-500"
                                         : "bg-slate-700 text-slate-400 border border-slate-600 cursor-not-allowed"
-                                }`}
+                                    }`}
                                 onClick={() => {
                                     if (!canContinuePassphrase) return;
                                     setConfirmedPassphrase(passphraseInput);

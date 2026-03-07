@@ -22,6 +22,9 @@ BACKEND_PID=""
 FRONTEND_PID=""
 REDACTOR_PID=""
 INFRA_STARTED="false"
+PYTHON_BIN=""
+PIP_CMD=""
+PIP_FLAGS=""
 
 is_running() {
   local pid="$1"
@@ -152,6 +155,45 @@ wait_for_port() {
   return 1
 }
 
+select_python_runtime() {
+  if [ -d "$SCRIPT_DIR/venv" ]; then
+    PYTHON_BIN="$SCRIPT_DIR/venv/bin/python"
+    PIP_CMD="$SCRIPT_DIR/venv/bin/python -m pip"
+    PIP_FLAGS=""
+    return 0
+  fi
+
+  if [ -d "$SCRIPT_DIR/.venv" ]; then
+    PYTHON_BIN="$SCRIPT_DIR/.venv/bin/python"
+    PIP_CMD="$SCRIPT_DIR/.venv/bin/python -m pip"
+    PIP_FLAGS=""
+    return 0
+  fi
+
+  if [ -x "/usr/bin/python3" ]; then
+    PYTHON_BIN="/usr/bin/python3"
+    PIP_CMD="/usr/bin/python3 -m pip"
+    PIP_FLAGS="--user"
+    return 0
+  fi
+
+  if [ -x "/Library/Developer/CommandLineTools/usr/bin/python3" ]; then
+    PYTHON_BIN="/Library/Developer/CommandLineTools/usr/bin/python3"
+    PIP_CMD="/Library/Developer/CommandLineTools/usr/bin/python3 -m pip"
+    PIP_FLAGS="--user"
+    return 0
+  fi
+
+  if command -v python3 >/dev/null 2>&1; then
+    PYTHON_BIN="$(command -v python3)"
+    PIP_CMD="$PYTHON_BIN -m pip"
+    PIP_FLAGS=""
+    return 0
+  fi
+
+  return 1
+}
+
 any_services_running() {
   read_pidfile
 
@@ -239,9 +281,9 @@ start_services() {
   fi
   echo ""
 
-  # Check if Python is installed
-  if ! command -v python3 &> /dev/null; then
-    echo -e "${RED}Error: Python3 is not installed.${NC}"
+  # Select a Python runtime compatible with the installed backend deps.
+  if ! select_python_runtime; then
+    echo -e "${RED}Error: No supported Python runtime found.${NC}"
     exit 1
   fi
 
@@ -273,22 +315,11 @@ start_services() {
   # Start Backend
   cd "$SCRIPT_DIR"
   echo -e "${YELLOW}Starting Flask Backend...${NC}"
-
-  if [ -d "venv" ]; then
-    echo -e "${YELLOW}Activating virtual environment (venv)...${NC}"
-    # shellcheck disable=SC1091
-    source venv/bin/activate
-  elif [ -d ".venv" ]; then
-    echo -e "${YELLOW}Activating virtual environment (.venv)...${NC}"
-    # shellcheck disable=SC1091
-    source .venv/bin/activate
-  else
-    echo -e "${YELLOW}No virtual environment found. Using system Python.${NC}"
-  fi
+  echo -e "${YELLOW}Using Python runtime: $PYTHON_BIN${NC}"
 
   if [ -f "requirements.txt" ]; then
     echo -e "${YELLOW}Installing Python dependencies...${NC}"
-    pip3 install -r requirements.txt
+    eval "$PIP_CMD install $PIP_FLAGS -r requirements.txt"
     echo -e "${GREEN}✓ Python dependencies installed${NC}"
   fi
 
@@ -300,7 +331,7 @@ start_services() {
     S3_SECRET_KEY="${S3_SECRET_KEY:-mock-secret-key}" \
     REDACTOR_SERVICE_URL="${REDACTOR_SERVICE_URL:-http://localhost:8000}" \
     PORT=5001 \
-    python3 app.py >"$BACKEND_LOG" 2>&1 &
+    "$PYTHON_BIN" app.py >"$BACKEND_LOG" 2>&1 &
   BACKEND_PID=$!
   if ! wait_for_port 5001 25; then
     echo -e "${RED}Backend failed to start on port 5001. Recent logs:${NC}"

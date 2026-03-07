@@ -51,7 +51,7 @@ export const FileList: React.FC<FileListProps> = React.memo(({
   const [selectedFileData, setSelectedFileData] = useState<any>(null);
   const [passphrase, setPassphrase] = useState('');
   const [showPassphraseModal, setShowPassphraseModal] = useState(false);
-  const [proofStatusById, setProofStatusById] = useState<Record<string, 'verified' | 'missing'>>({});
+  const [proofStatusById, setProofStatusById] = useState<Record<string, 'verified' | 'missing' | 'pending'>>({});
   const menuRef = useRef<HTMLDivElement | null>(null);
   const parentRef = useRef<HTMLDivElement>(null);
   const selectionContainerRef = useRef<HTMLDivElement | null>(null);
@@ -357,64 +357,121 @@ export const FileList: React.FC<FileListProps> = React.memo(({
   const itemsToRender = type === 'shares' ? (shares || []).filter(share => share && typeof share === 'object') : (files || []).filter(file => file && typeof file === 'object');
   const shouldUseVirtualScrolling = itemsToRender.length > 20;
 
-  useEffect(() => {
-    if (type !== 'my-files') return;
-    const fileMeta = itemsToRender
-      .map((file) => ({
-        id: file?.file_id || file?.id || file?._id,
-        redactionStatus: file?.redaction_status,
-        redactedFrom: file?.redacted_from,
-      }))
-      .filter((item) => typeof item.id === 'string');
+  const fileProofMeta = useMemo(
+    () =>
+      itemsToRender
+        .map((file) => ({
+          id: file?.file_id || file?.id || file?._id,
+          redactionStatus: file?.redaction_status,
+          redactedFrom: file?.redacted_from,
+        }))
+        .filter((item) => typeof item.id === 'string'),
+    [itemsToRender],
+  );
 
-    const eligible = fileMeta
-      .filter((item) => item.redactionStatus || item.redactedFrom)
-      .map((item) => item.id as string);
-    const ineligible = fileMeta
-      .filter((item) => !item.redactionStatus && !item.redactedFrom)
-      .map((item) => item.id as string);
+  const refreshProofStatuses = useCallback(async (ids: string[]) => {
+    if (ids.length === 0) return;
 
-    if (ineligible.length) {
-      setProofStatusById((prev) => {
-        const next = { ...prev };
-        ineligible.forEach((id) => {
-          if (!next[id]) {
-            next[id] = 'missing';
-          }
-        });
-        return next;
-      });
-    }
-
-    const missing = eligible.filter((id) => !proofStatusById[id]);
-    if (missing.length === 0) return;
-
-    let cancelled = false;
-    Promise.all(
-      missing.map(async (id) => {
+    const results = await Promise.all(
+      ids.map(async (id) => {
         try {
-          const result = await verifyRedaction(id);
+          const result = await verifyRedaction(id, { silent: true });
           const verified = result.proof_valid ?? result.valid_proof;
-          return { id, status: verified ? 'verified' : 'missing' };
+
+          if (verified) {
+            return { id, status: 'verified' as const };
+          }
+          if (result.status === 'pending') {
+            return { id, status: 'pending' as const };
+          }
+          return { id, status: 'missing' as const };
         } catch {
           return { id, status: 'missing' as const };
         }
-      })
-    ).then((results) => {
-      if (cancelled) return;
-      setProofStatusById((prev) => {
-        const next = { ...prev };
-        results.forEach((r) => {
+      }),
+    );
+
+    setProofStatusById((prev) => {
+      const next = { ...prev };
+      let changed = false;
+      results.forEach((r) => {
+        if (next[r.id] !== r.status) {
           next[r.id] = r.status;
-        });
-        return next;
+          changed = true;
+        }
       });
+      return changed ? next : prev;
+    });
+  }, []);
+
+  useEffect(() => {
+    if (type !== 'my-files') return;
+
+    const eligible = fileProofMeta
+      .filter((item) => item.redactionStatus || item.redactedFrom)
+      .map((item) => item.id as string);
+    const ineligible = fileProofMeta
+      .filter((item) => !item.redactionStatus && !item.redactedFrom)
+      .map((item) => item.id as string);
+
+    setProofStatusById((prev) => {
+      const next = { ...prev };
+      let changed = false;
+
+      ineligible.forEach((id) => {
+        if (next[id] !== 'missing') {
+          next[id] = 'missing';
+          changed = true;
+        }
+      });
+
+      fileProofMeta.forEach((item) => {
+        const id = item.id as string;
+        if (item.redactionStatus === 'pending') {
+          if (next[id] !== 'pending') {
+            next[id] = 'pending';
+            changed = true;
+          }
+        } else if ((item.redactionStatus || item.redactedFrom) && !next[id]) {
+          next[id] = 'missing';
+          changed = true;
+        }
+      });
+
+      return changed ? next : prev;
     });
 
+    const idsToVerify = eligible.filter((id) => {
+      const currentStatus = proofStatusById[id];
+      const serverStatus = fileProofMeta.find((item) => item.id === id)?.redactionStatus;
+      if (!currentStatus) {
+        return true;
+      }
+      return serverStatus === 'complete' || currentStatus === 'pending';
+    });
+
+    void refreshProofStatuses(idsToVerify);
+  }, [fileProofMeta, proofStatusById, refreshProofStatuses, type]);
+
+  useEffect(() => {
+    if (type !== 'my-files') return;
+
+    const pendingIds = fileProofMeta
+      .filter((item) => item.redactionStatus === 'pending' || proofStatusById[item.id as string] === 'pending')
+      .map((item) => item.id as string);
+
+    if (pendingIds.length === 0) {
+      return;
+    }
+
+    const intervalId = window.setInterval(() => {
+      void refreshProofStatuses(pendingIds);
+    }, 5000);
+
     return () => {
-      cancelled = true;
+      window.clearInterval(intervalId);
     };
-  }, [itemsToRender, proofStatusById, type]);
+  }, [fileProofMeta, proofStatusById, refreshProofStatuses, type]);
 
   const getResponsiveColumns = useCallback(() => {
     if (viewMode !== 'grid') return 1;
@@ -578,7 +635,8 @@ export const FileList: React.FC<FileListProps> = React.memo(({
         className={`group relative cursor-pointer border ${isSelected
           ? 'border-accent-blue/70 ring-2 ring-accent-blue/40 shadow-[0_0_35px_hsl(var(--accent-blue-glow))]'
           : 'border-borderAccent/20'
-          } bg-card transition-all`}
+          } bg-card transition-all animate-in fade-in slide-in-from-bottom-4 duration-500`}
+        style={{ animationDelay: `${Math.min(index, 20) * 50}ms`, animationFillMode: 'both' }}
       >
         <div className="p-5">
           <div className="flex items-start justify-between mb-4">
@@ -594,15 +652,32 @@ export const FileList: React.FC<FileListProps> = React.memo(({
                 />
                 <p className="text-xs text-muted-foreground font-medium">{formatFileSize(fileSize)}</p>
                 {type === 'my-files' && (
-                  <span
-                    className={`inline-flex items-center mt-2 px-2 py-0.5 rounded-full text-[10px] font-semibold ${
-                      proofStatus === 'verified'
+                  <div className="relative group inline-block mt-2">
+                    <span
+                      className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold cursor-default ${proofStatus === 'verified'
                         ? 'bg-emerald-500/15 text-emerald-400'
-                        : 'bg-amber-500/15 text-amber-400'
-                    }`}
-                  >
-                    {proofStatus === 'verified' ? '✓ Proof Verified' : '⚠ Proof Missing'}
-                  </span>
+                        : proofStatus === 'pending'
+                          ? 'bg-sky-500/15 text-sky-300'
+                          : 'bg-amber-500/15 text-amber-400'
+                        }`}
+                    >
+                      {proofStatus === 'verified' ? '✓ Proof Verified' : proofStatus === 'pending' ? '⏳ Proof Generating' : '⚠ Proof Missing'}
+                    </span>
+                    {proofStatus === 'pending' && file?.redaction_progress && (
+                      <div className="absolute left-0 bottom-full mb-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none w-48 p-2.5 bg-slate-900 border border-slate-700/50 rounded-lg shadow-xl z-50">
+                        <div className="flex items-center justify-between text-[10px] text-sky-200/90 mb-1.5 font-medium">
+                          <span>Chunk {file.redaction_progress.current} of {file.redaction_progress.total}</span>
+                          <span>{file.redaction_progress.total > 0 ? Math.round((file.redaction_progress.current / file.redaction_progress.total) * 100) : 0}%</span>
+                        </div>
+                        <div className="h-1.5 w-full bg-slate-800 rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-sky-400 rounded-full transition-all duration-300"
+                            style={{ width: `${file.redaction_progress.total > 0 ? Math.round((file.redaction_progress.current / file.redaction_progress.total) * 100) : 0}%` }}
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
             </div>
@@ -635,7 +710,7 @@ export const FileList: React.FC<FileListProps> = React.memo(({
               onClick={() => handleDownload(fileId, file)}
               variant="outline"
               size="sm"
-              className="flex-1 gap-2 text-xs hover:bg-primary/10 hover:border-primary/50"
+              className="flex-1 gap-2 text-xs transition-transform hover:-translate-y-0.5 active:translate-y-0 hover:bg-primary/10 hover:border-primary/50"
             >
               <Download className="w-3.5 h-3.5" />
               Download
@@ -645,7 +720,7 @@ export const FileList: React.FC<FileListProps> = React.memo(({
                 onClick={() => onShare(fileId)}
                 variant="outline"
                 size="sm"
-                className="flex-1 gap-2 text-xs hover:bg-accent hover:text-foreground"
+                className="flex-1 gap-2 text-xs transition-transform hover:-translate-y-0.5 active:translate-y-0 hover:bg-accent hover:text-foreground"
               >
                 <Share2 className="w-3.5 h-3.5" />
                 Share
@@ -656,7 +731,7 @@ export const FileList: React.FC<FileListProps> = React.memo(({
                 onClick={() => handleRevokeShare(file.share_id || file.id)}
                 variant="outline"
                 size="sm"
-                className="flex-1 gap-2 text-xs hover:bg-destructive/10 hover:border-destructive/50 text-destructive"
+                className="flex-1 gap-2 text-xs transition-transform hover:-translate-y-0.5 active:translate-y-0 hover:bg-destructive/10 hover:border-destructive/50 text-destructive"
               >
                 <Trash2 className="w-3.5 h-3.5" />
                 Remove
@@ -679,7 +754,8 @@ export const FileList: React.FC<FileListProps> = React.memo(({
       <Card
         key={shareId}
         variant="premium"
-        className="group border border-borderAccent/20"
+        className="group border border-borderAccent/20 transition-all animate-in fade-in slide-in-from-bottom-4 duration-500"
+        style={{ animationDelay: `${Math.min(index, 20) * 50}ms`, animationFillMode: 'both' }}
       >
         <div className="p-5">
           <div className="flex items-start justify-between mb-4">

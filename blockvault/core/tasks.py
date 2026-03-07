@@ -139,8 +139,17 @@ def generate_redaction_proof_task(self: Any, file_id: str) -> Dict[str, Any]:
             coll.update_one({"_id": rec["_id"]}, {"$set": {"redaction_error": str(exc)}})
             return {"file_id": file_id, "status": "failed", "error": str(exc)}
 
+        def _on_progress(current: int, total: int):
+            try:
+                coll.update_one(
+                    {"_id": rec["_id"]},
+                    {"$set": {"redaction_progress": {"current": current, "total": total}}}
+                )
+            except Exception as e:
+                logger.warning("Failed to update redaction progress for %s: %s", file_id, e)
+
         try:
-            proof_bundle = generate_redaction_proof_from_inputs(inputs)
+            proof_bundle = generate_redaction_proof_from_inputs(inputs, progress_callback=_on_progress)
         except Exception as exc:
             try:
                 raise self.retry(exc=exc)

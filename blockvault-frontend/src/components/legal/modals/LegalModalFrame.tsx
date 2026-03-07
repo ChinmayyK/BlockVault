@@ -14,6 +14,7 @@ interface LegalModalFrameProps {
   widthClassName?: string;
   className?: string;
   contentClassName?: string;
+  overlayClassName?: string;
   headerAccent?: 'blue' | 'green' | 'violet';
 }
 
@@ -33,10 +34,16 @@ export function LegalModalFrame({
   widthClassName = 'max-w-2xl',
   className,
   contentClassName,
+  overlayClassName,
   headerAccent = 'blue',
 }: LegalModalFrameProps) {
   return (
-    <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/90 p-4 backdrop-blur-sm">
+    <div
+      className={cn(
+        "fixed inset-0 z-[999] flex items-center justify-center bg-black/90 p-4 backdrop-blur-sm",
+        overlayClassName,
+      )}
+    >
       <div
         className={cn(
           `legal-modal flex w-full ${widthClassName} max-h-[88vh] flex-col overflow-hidden rounded-2xl border border-white/10 bg-black shadow-2xl`,
@@ -84,5 +91,4 @@ export function LegalModalFrame({
     </div>
   );
 }
-
 

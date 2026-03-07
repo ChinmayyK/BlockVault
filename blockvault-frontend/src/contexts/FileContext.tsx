@@ -3,6 +3,7 @@ import { useMutation, useQueryClient, useInfiniteQuery } from '@tanstack/react-q
 import toast from 'react-hot-toast';
 import { getApiBase } from '@/lib/getApiBase';
 import { fetchWithTimeout } from '@/utils/fetchWithTimeout';
+import apiClient from '@/api/client';
 import { readStoredUser, clearStoredUser } from '@/utils/authStorage';
 
 interface File {
@@ -27,6 +28,55 @@ interface Share {
   created_at: string;
   expires_at?: string;
 }
+
+const getCanonicalId = (item: any) => String(item?.file_id || item?.id || item?._id || '');
+
+const getCreatedAtValue = (item: any) => Number(item?.created_at || 0);
+
+const dedupeFiles = (items: any[]): File[] => {
+  const byKey = new Map<string, any>();
+
+  for (const item of items) {
+    if (!item || typeof item !== 'object') {
+      continue;
+    }
+
+    const fileId = getCanonicalId(item);
+    if (!fileId) {
+      continue;
+    }
+
+    const semanticDuplicateKey = item?.redacted_from
+      ? `redacted-source:${String(item.redacted_from)}`
+      : `id:${fileId}`;
+
+    const existing = byKey.get(semanticDuplicateKey);
+    if (!existing || getCreatedAtValue(item) > getCreatedAtValue(existing)) {
+      byKey.set(semanticDuplicateKey, item);
+    }
+  }
+
+  return Array.from(byKey.values()) as File[];
+};
+
+const dedupeShares = <T extends Record<string, any>>(items: T[], keyResolver: (item: T) => string): T[] => {
+  const seen = new Set<string>();
+  const output: T[] = [];
+
+  for (const item of items) {
+    if (!item || typeof item !== 'object') {
+      continue;
+    }
+    const key = keyResolver(item);
+    if (!key || seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    output.push(item);
+  }
+
+  return output;
+};
 
 interface FileContextType {
   files: File[];
@@ -70,14 +120,19 @@ interface FileProviderProps {
 export const FileProvider: React.FC<FileProviderProps> = ({ children }) => {
   const queryClient = useQueryClient();
 
-  const getStoredUser = () => readStoredUser<{ jwt?: string }>();
+  const getStoredUser = () => readStoredUser<{ jwt?: string; address?: string }>();
 
   const initialUser = getStoredUser();
+  const initialIsAuthenticated = !!initialUser?.jwt;
+  const initialAuthScope = initialIsAuthenticated
+    ? `${initialUser?.address || 'unknown'}:${initialUser?.jwt}`
+    : 'guest';
 
-  // Cache user authentication state to avoid repeated localStorage reads
-  const [isAuthenticated, setIsAuthenticated] = useState(() => !!initialUser);
+  // Only consider the session authenticated once a JWT is present.
+  const [isAuthenticated, setIsAuthenticated] = useState(initialIsAuthenticated);
+  const [authScope, setAuthScope] = useState(initialAuthScope);
 
-  const userRef = useRef<{ jwt?: string } | null>(initialUser);
+  const userRef = useRef<{ jwt?: string; address?: string } | null>(initialUser);
 
   // Initialize user ref on mount and listen for auth changes
   useEffect(() => {
@@ -85,9 +140,14 @@ export const FileProvider: React.FC<FileProviderProps> = ({ children }) => {
       return;
     }
     const updateAuth = () => {
-      const storedUser = readStoredUser<{ jwt?: string }>();
-      const authenticated = !!storedUser;
+      const storedUser = readStoredUser<{ jwt?: string; address?: string }>();
+      const authenticated = !!storedUser?.jwt;
       setIsAuthenticated(authenticated);
+      setAuthScope(
+        authenticated
+          ? `${storedUser?.address || 'unknown'}:${storedUser?.jwt}`
+          : 'guest'
+      );
       userRef.current = storedUser;
     };
 
@@ -135,22 +195,23 @@ export const FileProvider: React.FC<FileProviderProps> = ({ children }) => {
     hasNextPage: hasMoreFiles,
     isFetchingNextPage: isFetchingMoreFiles,
   } = useInfiniteQuery({
-    queryKey: ['files', 'infinite'],
+    queryKey: ['files', 'infinite', authScope],
     queryFn: async ({ pageParam }) => {
       const params = new URLSearchParams({ limit: '50' });
       if (pageParam) {
         params.append('after', String(pageParam));
       }
-      const response = await fetchWithTimeout(`${getApiBase()}/files/?${params.toString()}`, {
-        headers: getAuthHeadersWithContentType(),
-      });
-      if (!response.ok) {
-        if (response.status === 401) {
+      try {
+        const response = await apiClient.get(`/files/?${params.toString()}`, {
+          skipGlobalLoader: true
+        } as any);
+        return response.data;
+      } catch (error: any) {
+        if (error.response?.status === 401) {
           return { items: [], next_after: null, has_more: false };
         }
         throw new Error('Failed to fetch files');
       }
-      return response.json();
     },
     initialPageParam: undefined as number | undefined,
     getNextPageParam: (lastPage) =>
@@ -170,22 +231,23 @@ export const FileProvider: React.FC<FileProviderProps> = ({ children }) => {
     hasNextPage: hasMoreSharedFiles,
     isFetchingNextPage: isFetchingMoreSharedFiles,
   } = useInfiniteQuery({
-    queryKey: ['sharedFiles'],
+    queryKey: ['sharedFiles', authScope],
     queryFn: async ({ pageParam }) => {
       const params = new URLSearchParams({ limit: '50' });
       if (pageParam) {
         params.append('after', String(pageParam));
       }
-      const response = await fetchWithTimeout(`${getApiBase()}/files/shared?${params.toString()}`, {
-        headers: getAuthHeadersWithContentType(),
-      });
-      if (!response.ok) {
-        if (response.status === 401) {
+      try {
+        const response = await apiClient.get(`/files/shared?${params.toString()}`, {
+          skipGlobalLoader: true
+        } as any);
+        return response.data;
+      } catch (error: any) {
+        if (error.response?.status === 401) {
           return { shares: [], next_after: null, has_more: false };
         }
         throw new Error('Failed to fetch shared files');
       }
-      return response.json();
     },
     initialPageParam: undefined as number | undefined,
     getNextPageParam: (lastPage) =>
@@ -205,22 +267,23 @@ export const FileProvider: React.FC<FileProviderProps> = ({ children }) => {
     hasNextPage: hasMoreOutgoingShares,
     isFetchingNextPage: isFetchingMoreOutgoingShares,
   } = useInfiniteQuery({
-    queryKey: ['outgoingShares'],
+    queryKey: ['outgoingShares', authScope],
     queryFn: async ({ pageParam }) => {
       const params = new URLSearchParams({ limit: '50' });
       if (pageParam) {
         params.append('after', String(pageParam));
       }
-      const response = await fetchWithTimeout(`${getApiBase()}/files/shares/outgoing?${params.toString()}`, {
-        headers: getAuthHeadersWithContentType(),
-      });
-      if (!response.ok) {
-        if (response.status === 401) {
+      try {
+        const response = await apiClient.get(`/files/shares/outgoing?${params.toString()}`, {
+          skipGlobalLoader: true
+        } as any);
+        return response.data;
+      } catch (error: any) {
+        if (error.response?.status === 401) {
           return { shares: [], next_after: null, has_more: false };
         }
         throw new Error('Failed to fetch outgoing shares');
       }
-      return response.json();
     },
     initialPageParam: undefined as number | undefined,
     getNextPageParam: (lastPage) =>
@@ -233,23 +296,31 @@ export const FileProvider: React.FC<FileProviderProps> = ({ children }) => {
 
   const files = useMemo(
     () =>
-      (filesPages?.pages || [])
-        .flatMap((page: any) => page?.items || [])
-        .filter((item: any) => item && typeof item === 'object'),
+      dedupeFiles(
+        (filesPages?.pages || [])
+          .flatMap((page: any) => page?.items || [])
+          .filter((item: any) => item && typeof item === 'object')
+      ),
     [filesPages],
   );
   const sharedFiles = useMemo(
     () =>
-      (sharedFilesPages?.pages || [])
-        .flatMap((page: any) => page?.shares || [])
-        .filter((share: any) => share && typeof share === 'object'),
+      dedupeShares(
+        (sharedFilesPages?.pages || [])
+          .flatMap((page: any) => page?.shares || [])
+          .filter((share: any) => share && typeof share === 'object'),
+        (share: any) => String(share?.share_id || share?.id || share?.file_id || ''),
+      ),
     [sharedFilesPages],
   );
   const outgoingShares = useMemo(
     () =>
-      (outgoingSharesPages?.pages || [])
-        .flatMap((page: any) => page?.shares || [])
-        .filter((share: any) => share && typeof share === 'object'),
+      dedupeShares(
+        (outgoingSharesPages?.pages || [])
+          .flatMap((page: any) => page?.shares || [])
+          .filter((share: any) => share && typeof share === 'object'),
+        (share: any) => String(share?.share_id || share?.id || ''),
+      ),
     [outgoingSharesPages],
   );
   const loading = filesLoading || sharedFilesLoading || outgoingSharesLoading;
@@ -285,43 +356,28 @@ export const FileProvider: React.FC<FileProviderProps> = ({ children }) => {
       if (aad) formData.append('aad', aad);
       if (folder) formData.append('folder', folder);
 
-      const response = await fetchWithTimeout(`${getApiBase()}/files/`, {
-        method: 'POST',
-        headers: {
-          'Authorization': getAuthHeaders().Authorization,
-        },
-        body: formData,
-        timeout: 60000,
-      });
-
-      if (!response.ok) {
-        if (response.status === 401) {
+      try {
+        const response = await apiClient.post(`/files/`, formData, {
+          headers: {
+            'Content-Type': 'multipart/form-data',
+          },
+          timeout: 60000,
+          loadingMessage: 'Encrypting and Uploading File...',
+        } as any);
+        return response.data;
+      } catch (error: any) {
+        if (error.response?.status === 401) {
           clearStoredUser();
           throw new Error('Session expired. Please login again.');
         }
-        let errorMessage = `Upload failed with status ${response.status}`;
-        try {
-          const contentType = response.headers.get('content-type') || '';
-          if (contentType.includes('application/json')) {
-            const data = await response.json();
-            if (data?.error) {
-              errorMessage = data.error;
-            } else {
-              errorMessage = JSON.stringify(data);
-            }
-          } else {
-            const text = await response.text();
-            if (text) {
-              errorMessage = text;
-            }
-          }
-        } catch (err) {
-          // ignore parsing errors
+        let errorMessage = `Upload failed with status ${error.response?.status || 'unknown'}`;
+        if (error.response?.data?.error) {
+          errorMessage = error.response.data.error;
+        } else if (error.response?.data) {
+          errorMessage = JSON.stringify(error.response.data);
         }
         throw new Error(errorMessage);
       }
-
-      return response.json();
     },
     onSuccess: () => {
       toast.success('File uploaded successfully');
@@ -373,34 +429,11 @@ export const FileProvider: React.FC<FileProviderProps> = ({ children }) => {
         }
       }
 
-      const requestUrl = `${getApiBase()}/files/${fileId}?key=${encodeURIComponent(actualPassphrase)}`;
-      console.log('🌐 Starting download fetch to:', requestUrl);
-
-      const response = await fetch(requestUrl, {
-        method: 'GET',
-        headers: getAuthHeadersWithContentType(),
-      });
-
-      if (!response.ok) {
-        console.error('❌ Download response not OK', response.status);
-        if (response.status === 401) {
-          clearStoredUser();
-          throw new Error('Session expired. Please login again.');
-        }
-        if (response.status === 410) {
-          throw new Error('File is no longer available. It may have been deleted or expired.');
-        }
-        if (response.status === 404) {
-          throw new Error('File not found. It may have been deleted.');
-        }
-        const errorText = await response.text().catch(() => '');
-        const errorMessage = errorText || `Download failed with status ${response.status}`;
-        throw new Error(errorMessage);
-      }
-
-      console.log('✅ Download response OK, reading blob…');
-
-      const blob = await response.blob();
+      const response = await apiClient.get(`/files/${fileId}?key=${encodeURIComponent(actualPassphrase)}`, {
+        responseType: 'blob',
+        loadingMessage: 'Decrypting & Downloading...',
+      } as any);
+      const blob = response.data;
       console.log('✅ Blob created', { size: blob.size, type: blob.type });
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -422,18 +455,16 @@ export const FileProvider: React.FC<FileProviderProps> = ({ children }) => {
 
   const deleteFileMutation = useMutation({
     mutationFn: async (fileId: string) => {
-      const response = await fetchWithTimeout(`${getApiBase()}/files/${fileId}`, {
-        method: 'DELETE',
-        headers: getAuthHeadersWithContentType(),
-      });
-
-      if (!response.ok) {
-        if (response.status === 401) {
+      try {
+        await apiClient.delete(`/files/${fileId}`, {
+          loadingMessage: 'Deleting file...',
+        } as any);
+      } catch (error: any) {
+        if (error.response?.status === 401) {
           clearStoredUser();
           throw new Error('Session expired. Please login again.');
         }
-        // If the file is already gone on the backend, treat this as a successful delete
-        if (response.status === 404) {
+        if (error.response?.status === 404) {
           return;
         }
         throw new Error('Delete failed');
@@ -441,7 +472,7 @@ export const FileProvider: React.FC<FileProviderProps> = ({ children }) => {
     },
     onSuccess: (_data, fileId) => {
       // Optimistically remove the file from the local infinite query cache
-      queryClient.setQueryData<any>(['files', 'infinite'], (prev) => {
+      queryClient.setQueriesData<any>({ queryKey: ['files', 'infinite'] }, (prev) => {
         if (!prev || !prev.pages) return prev;
         const nextPages = prev.pages.map((page: any) => {
           if (!page?.items) return page;
@@ -481,22 +512,18 @@ export const FileProvider: React.FC<FileProviderProps> = ({ children }) => {
         body.recipient = recipient;
       }
 
-      const response = await fetchWithTimeout(`${getApiBase()}/files/${fileId}/share`, {
-        method: 'POST',
-        headers: getAuthHeadersWithContentType(),
-        body: JSON.stringify(body),
-      });
-
-      if (!response.ok) {
-        if (response.status === 401) {
+      try {
+        const response = await apiClient.post(`/files/${fileId}/share`, body, {
+          loadingMessage: 'Creating secure share link...',
+        } as any);
+        return response.data;
+      } catch (error: any) {
+        if (error.response?.status === 401) {
           clearStoredUser();
           throw new Error('Session expired. Please login again.');
         }
-        const errorData = await response.json().catch(() => ({ error: 'Share failed' }));
-        throw new Error(errorData.error || 'Share failed');
+        throw new Error(error.response?.data?.error || 'Share failed');
       }
-
-      return response.json();
     },
     onSuccess: async (result) => {
       if (result.status === 'pending') {
@@ -519,13 +546,12 @@ export const FileProvider: React.FC<FileProviderProps> = ({ children }) => {
 
   const revokeShareMutation = useMutation({
     mutationFn: async (shareId: string) => {
-      const response = await fetchWithTimeout(`${getApiBase()}/files/shares/${shareId}`, {
-        method: 'DELETE',
-        headers: getAuthHeadersWithContentType(),
-      });
-
-      if (!response.ok) {
-        if (response.status === 401) {
+      try {
+        await apiClient.delete(`/files/shares/${shareId}`, {
+          loadingMessage: 'Revoking access...',
+        } as any);
+      } catch (error: any) {
+        if (error.response?.status === 401) {
           clearStoredUser();
           throw new Error('Session expired. Please login again.');
         }

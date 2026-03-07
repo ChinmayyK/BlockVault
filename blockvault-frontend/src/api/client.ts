@@ -44,6 +44,8 @@ apiClient.interceptors.request.use(
 
 const AUTH_TOAST_COOLDOWN_MS = 6000;
 let lastAuthToastAt = 0;
+const NETWORK_TOAST_COOLDOWN_MS = 6000;
+let lastNetworkToastAt = 0;
 
 // Response interceptor
 apiClient.interceptors.response.use(
@@ -89,8 +91,10 @@ apiClient.interceptors.response.use(
       }
     }
     if (!error.response) {
-      if (!error.config?.skipNetworkToast) {
+      const now = Date.now();
+      if (!error.config?.skipNetworkToast && now - lastNetworkToastAt > NETWORK_TOAST_COOLDOWN_MS) {
         toast.error('Network error. Please check your connection and try again.');
+        lastNetworkToastAt = now;
       }
       logger.error('Network/timeout error', error);
     }
@@ -100,4 +104,3 @@ apiClient.interceptors.response.use(
 );
 
 export default apiClient;
-

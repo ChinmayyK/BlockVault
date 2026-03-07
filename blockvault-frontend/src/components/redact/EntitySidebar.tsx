@@ -14,6 +14,7 @@ interface EntitySidebarProps {
     isApplying: boolean;
     hoveredEntityId?: string | null;
     onHoverEntity?: (id: string | null) => void;
+    redactionComplete?: boolean;
 }
 
 export function EntitySidebar({
@@ -24,7 +25,8 @@ export function EntitySidebar({
     onApplyRedaction,
     isApplying,
     hoveredEntityId,
-    onHoverEntity
+    onHoverEntity,
+    redactionComplete
 }: EntitySidebarProps) {
 
     // Group entities by type
@@ -42,11 +44,11 @@ export function EntitySidebar({
         });
     };
 
-    const selectedCount = entities.filter(e => e.approved !== false).length;
+    const selectedCount = entities.filter(e => e.approved !== false).length + manualBoxes.length;
     const confidenceWarning = entities.some(e => e.score && e.score < 0.8 && e.approved !== false);
 
     return (
-        <div className="flex flex-col h-full bg-card border-l w-80 shadow-xl">
+        <div className="flex h-full w-full min-h-0 flex-col bg-card">
             <div className="p-4 border-b bg-muted/10">
                 <h2 className="text-lg font-semibold flex items-center gap-2">
                     Detected Sensitive Data
@@ -188,22 +190,24 @@ export function EntitySidebar({
                 )}
             </ScrollArea>
 
-            <div className="p-4 border-t bg-card mt-auto space-y-3">
-                <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">Selected for redaction</span>
-                    <span className="font-semibold">{selectedCount} entities</span>
+            {!redactionComplete && (
+                <div className="p-4 border-t bg-card mt-auto space-y-3 shrink-0">
+                    <div className="flex items-center justify-between text-sm">
+                        <span className="text-muted-foreground">Selected for redaction</span>
+                        <span className="font-semibold">{selectedCount} entities</span>
+                    </div>
+                    <Button
+                        className="w-full relative overflow-hidden group"
+                        onClick={onApplyRedaction}
+                        disabled={isApplying || (entities.length === 0 && manualBoxes.length === 0)}
+                    >
+                        {isApplying ? "Applying Redactions..." : "Apply & Create Copy"}
+                    </Button>
+                    <p className="text-[10px] text-center text-muted-foreground leading-tight">
+                        Redacting will generate a fully anonymized copy of the document. The operation is irreversible.
+                    </p>
                 </div>
-                <Button
-                    className="w-full relative overflow-hidden group"
-                    onClick={onApplyRedaction}
-                    disabled={isApplying || entities.length === 0}
-                >
-                    {isApplying ? "Applying Redactions..." : "Apply & Create Copy"}
-                </Button>
-                <p className="text-[10px] text-center text-muted-foreground leading-tight">
-                    Redacting will generate a fully anonymized copy of the document. The operation is irreversible.
-                </p>
-            </div>
+            )}
         </div>
     );
 }

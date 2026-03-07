@@ -18,6 +18,13 @@ export interface ManualRect {
     height: number;
 }
 
+export interface SearchMatch {
+    id: string;
+    text: string;
+    page: number;
+    bbox: [number, number, number, number];
+}
+
 export interface AnalyzeResponse {
     entities: RedactEntity[];
 }
@@ -25,6 +32,7 @@ export interface AnalyzeResponse {
 export interface RedactRequest {
     entities: RedactEntity[];
     manual_boxes: ManualRect[];
+    search_boxes: SearchMatch[];
 }
 
 export interface RedactApplyResponse {
@@ -56,4 +64,8 @@ export interface VerifyRedactionResponse {
     anchor_tx?: string | null;
     chunk_count?: number;
     modified_chunks?: number[];
+    progress?: {
+        current: number;
+        total: number;
+    };
 }

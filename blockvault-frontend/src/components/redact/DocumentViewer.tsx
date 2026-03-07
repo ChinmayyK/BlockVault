@@ -1,7 +1,7 @@
 import { useRef, useState, useEffect, MouseEvent, useMemo } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
 import { Rnd } from "react-rnd";
-import { RedactEntity, ManualRect } from "../../types/redactor";
+import { RedactEntity, ManualRect, SearchMatch } from "../../types/redactor";
 
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 import 'react-pdf/dist/Page/TextLayer.css';
@@ -11,6 +11,7 @@ interface VirtualPageProps {
     scale: number;
     entities: RedactEntity[];
     manualBoxes: ManualRect[];
+    searchMatches: SearchMatch[];
     onAddManualBox?: (rect: ManualRect) => void;
     onUpdateManualBox?: (id: string, updates: Partial<ManualRect>) => void;
     onToggleEntity?: (entityId: string) => void;
@@ -27,6 +28,7 @@ function VirtualPage({
     scale,
     entities,
     manualBoxes,
+    searchMatches,
     onAddManualBox,
     onUpdateManualBox,
     onToggleEntity,
@@ -191,6 +193,27 @@ function VirtualPage({
                                 </rect>
                             );
                         })}
+
+                        {/* Overlay Search Matches */}
+                        {!previewMode && searchMatches.map((match, idx) => {
+                            const [x0, y0, x1, y1] = match.bbox;
+                            const width = x1 - x0;
+                            const height = y1 - y0;
+
+                            return (
+                                <rect
+                                    key={match.id || `search-${idx}`}
+                                    x={x0 * scale}
+                                    y={y0 * scale}
+                                    width={width * scale}
+                                    height={height * scale}
+                                    fill="rgba(59, 130, 246, 0.2)"
+                                    stroke="rgba(59, 130, 246, 1)"
+                                    strokeWidth={2}
+                                    className="pointer-events-none"
+                                />
+                            );
+                        })}
                     </svg>
 
                     {/* Overlay Manual Rectangles */}
@@ -278,6 +301,7 @@ interface DocumentViewerProps {
     file: File | string | null;
     entities: RedactEntity[];
     manualBoxes?: ManualRect[];
+    searchMatches?: SearchMatch[];
     onAddManualBox?: (rect: ManualRect) => void;
     onUpdateManualBox?: (id: string, updates: Partial<ManualRect>) => void;
     onToggleEntity?: (entityId: string) => void;
@@ -293,6 +317,7 @@ export function DocumentViewer({
     file,
     entities,
     manualBoxes = [],
+    searchMatches = [],
     onAddManualBox,
     onUpdateManualBox,
     onToggleEntity,
@@ -395,6 +420,7 @@ export function DocumentViewer({
                                 scale={scale}
                                 entities={entities.filter(e => e.page === pageNum)}
                                 manualBoxes={manualBoxes.filter(b => b.page === pageNum)}
+                                searchMatches={searchMatches.filter(m => m.page === pageNum)}
                                 onAddManualBox={onAddManualBox}
                                 onUpdateManualBox={onUpdateManualBox}
                                 onToggleEntity={onToggleEntity}

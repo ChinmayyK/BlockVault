@@ -1,16 +1,16 @@
 import React, { useState, useMemo, useCallback, useRef, lazy, Suspense } from 'react';
-import { 
-  Upload, 
-  Grid3x3, 
-  List, 
-  Download, 
-  Share2, 
-  Trash2, 
-  MoreVertical, 
-  FileText, 
-  Image as ImageIcon, 
-  File as FileIcon, 
-  Search, 
+import {
+  Upload,
+  Grid3x3,
+  List,
+  Download,
+  Share2,
+  Trash2,
+  MoreVertical,
+  FileText,
+  Image as ImageIcon,
+  File as FileIcon,
+  Search,
   Filter,
   HardDrive,
   TrendingUp,
@@ -40,6 +40,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useFiles } from "@/contexts/FileContext";
 import { FileUpload } from "@/components/file/FileUpload";
 import { FileList } from "@/components/file/FileList";
+import { FileListSkeleton } from "@/components/skeleton/FileListSkeleton";
 import { useDebounce } from "@/hooks/useDebounce";
 
 const LazyShareModal = lazy(() =>
@@ -175,7 +176,7 @@ export default function DashboardPage() {
     return 'other';
   };
 
-  const filteredFiles = useMemo(() => 
+  const filteredFiles = useMemo(() =>
     (files || []).filter(file => {
       const matchesSearch = file.name && file.name.toLowerCase().includes(debouncedSearchQuery.toLowerCase());
       const matchesFilter = filterType === 'all' || getFileType(file.name || '') === filterType;
@@ -200,7 +201,7 @@ export default function DashboardPage() {
   );
 
   // Sort files
-  const sortedFiles = useMemo(() => 
+  const sortedFiles = useMemo(() =>
     [...filteredFiles].sort((a, b) => {
       let comparison = 0;
       switch (sortBy) {
@@ -227,7 +228,7 @@ export default function DashboardPage() {
   ];
 
   return (
-    <div 
+    <div
       className="space-y-6 animate-in fade-in duration-500"
       onDragEnter={handleDragEnter}
       onDragOver={handleDragOver}
@@ -365,9 +366,9 @@ export default function DashboardPage() {
       <div className="flex items-center gap-3">
         <div className="relative flex-1 max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input 
-            placeholder="Search files..." 
-            className="pl-10" 
+          <Input
+            placeholder="Search files..."
+            className="pl-10"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
           />
@@ -376,9 +377,9 @@ export default function DashboardPage() {
             <span>K</span>
           </div>
         </div>
-        <Button 
-          variant="outline" 
-          size="sm" 
+        <Button
+          variant="outline"
+          size="sm"
           className="gap-2"
           onClick={() => setShowFilters(!showFilters)}
         >
@@ -386,9 +387,9 @@ export default function DashboardPage() {
           Filter
         </Button>
         {hasActiveFilters && (
-          <Button 
-            variant="ghost" 
-            size="sm" 
+          <Button
+            variant="ghost"
+            size="sm"
             className="gap-2"
             onClick={clearFilters}
           >
@@ -447,18 +448,22 @@ export default function DashboardPage() {
         </TabsList>
 
         <TabsContent value="my-files" className="mt-4">
-          <FileList
-            files={sortedFiles}
-            onShare={(fileId) => {
-              setSelectedFile(fileId);
-              setShowShareModal(true);
-            }}
-            type="my-files"
-            viewMode={viewMode}
-            hasMore={hasMoreFiles}
-            onLoadMore={loadMoreFiles}
-            isLoadingMore={loadingMoreFiles}
-          />
+          {loading && !files?.length ? (
+            <FileListSkeleton count={6} />
+          ) : (
+            <FileList
+              files={sortedFiles}
+              onShare={(fileId) => {
+                setSelectedFile(fileId);
+                setShowShareModal(true);
+              }}
+              type="my-files"
+              viewMode={viewMode}
+              hasMore={hasMoreFiles}
+              onLoadMore={loadMoreFiles}
+              isLoadingMore={loadingMoreFiles}
+            />
+          )}
         </TabsContent>
 
         <TabsContent value="shared" className="mt-4">
@@ -479,26 +484,34 @@ export default function DashboardPage() {
                 {refreshingShared ? 'Refreshing...' : 'Refresh'}
               </Button>
             </div>
-            <FileList
-              files={filteredSharedFiles}
-              type="shared"
-              viewMode={viewMode}
-              hasMore={hasMoreSharedFiles}
-              onLoadMore={loadMoreSharedFiles}
-              isLoadingMore={loadingMoreSharedFiles}
-            />
+            {loading && !sharedFiles?.length ? (
+              <FileListSkeleton count={4} />
+            ) : (
+              <FileList
+                files={filteredSharedFiles}
+                type="shared"
+                viewMode={viewMode}
+                hasMore={hasMoreSharedFiles}
+                onLoadMore={loadMoreSharedFiles}
+                isLoadingMore={loadingMoreSharedFiles}
+              />
+            )}
           </div>
         </TabsContent>
 
         <TabsContent value="shares" className="mt-4">
-          <FileList
-            shares={filteredOutgoingShares}
-            type="shares"
-            viewMode={viewMode}
-            hasMore={hasMoreOutgoingShares}
-            onLoadMore={loadMoreOutgoingShares}
-            isLoadingMore={loadingMoreOutgoingShares}
-          />
+          {loading && !outgoingShares?.length ? (
+            <FileListSkeleton count={4} />
+          ) : (
+            <FileList
+              shares={filteredOutgoingShares}
+              type="shares"
+              viewMode={viewMode}
+              hasMore={hasMoreOutgoingShares}
+              onLoadMore={loadMoreOutgoingShares}
+              isLoadingMore={loadingMoreOutgoingShares}
+            />
+          )}
         </TabsContent>
       </Tabs>
 

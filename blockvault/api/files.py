@@ -73,18 +73,25 @@ def _check_passphrase_strength(passphrase: str) -> None:
 
 def _decrypt_file_bytes(rec: Dict[str, Any], key: str) -> bytes:
     """Fetch encrypted blob from S3 and decrypt with the crypto daemon."""
+    import logging as _logging
+    _log = _logging.getLogger("blockvault")
     try:
         encrypted_bytes = s3_mod.download_blob(rec["enc_filename"])
+        _log.info("_decrypt_file_bytes: S3 download OK (%d bytes)", len(encrypted_bytes))
     except FileNotFoundError:
         abort(410, "encrypted blob missing from object storage")
     except Exception as exc:
         abort(502, f"failed to download encrypted blob: {exc}")
 
     try:
-        return crypto_decrypt(encrypted_bytes, key, rec.get("aad"))
-    except CryptoDaemonError:
+        result = crypto_decrypt(encrypted_bytes, key, rec.get("aad"))
+        _log.info("_decrypt_file_bytes: crypto decrypt OK (%d bytes)", len(result))
+        return result
+    except CryptoDaemonError as exc:
+        _log.error("_decrypt_file_bytes: CryptoDaemonError: %s", exc)
         abort(503, "crypto service unavailable")
     except Exception as exc:
+        _log.error("_decrypt_file_bytes: decrypt exception: %s: %s", type(exc).__name__, exc)
         abort(400, f"decryption failed (bad key or corrupted data): {type(exc).__name__}")
 
 
@@ -176,6 +183,34 @@ def _serialize_share(doc: Dict[str, Any], include_encrypted: bool = True) -> Dic
     if "gateway_url" in doc:
         base["gateway_url"] = doc.get("gateway_url")
     return base
+
+
+def _doc_sort_key_for_listing(doc: Dict[str, Any]) -> Tuple[int, str]:
+    created_at = int(doc.get("created_at") or 0)
+    return created_at, str(doc.get("_id") or "")
+
+
+def _collapse_visible_file_docs(docs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Keep only the latest redacted copy per source file in file listings.
+
+    Users create a new redacted file on each apply step. Older redacted copies
+    are still stored for audit/proof purposes, but they should not continue to
+    appear as separate cards in the main dashboard after refresh.
+    """
+    visible: List[Dict[str, Any]] = []
+    seen_redaction_sources: set[str] = set()
+
+    for doc in sorted(docs, key=_doc_sort_key_for_listing, reverse=True):
+        redacted_from = doc.get("redacted_from")
+        if redacted_from:
+            source_key = str(redacted_from)
+            if source_key in seen_redaction_sources:
+                continue
+            seen_redaction_sources.add(source_key)
+
+        visible.append(doc)
+
+    return visible
 
 
 @bp.post("/", strict_slashes=False)
@@ -482,7 +517,8 @@ def fetch_file_content(file_id: str):  # type: ignore
 @require_auth
 def list_files():  # type: ignore
     ensure_role(Role.USER)
-    # Simple listing for the owner; optional limit & after (created_at cursor)
+    # Simple listing for the owner; optional limit & after (created_at cursor).
+    # The dashboard should only show the newest redacted copy per source file.
     try:
         limit = int(request.args.get("limit", "50"))
     except ValueError:
@@ -506,12 +542,19 @@ def list_files():  # type: ignore
         flt: Dict[str, Any] = {"owner": owner}
         if folder_filter:
             flt["folder"] = folder_filter
-        if after_i is not None:
-            flt["created_at"] = {"$gt": after_i}
         if q:
             flt["original_name"] = {"$regex": q, "$options": "i"}
-        cursor = coll.find(flt).sort("created_at", 1).limit(limit + 1)
-        for idx, doc in enumerate(cursor):
+
+        docs = list(coll.find(flt))
+        visible_docs = _collapse_visible_file_docs(docs)
+        if after_i is not None:
+            visible_docs = [
+                doc for doc in visible_docs
+                if int(doc.get("created_at") or 0) < after_i
+            ]
+
+        page_docs = visible_docs[: limit + 1]
+        for idx, doc in enumerate(page_docs):
             if idx >= limit:
                 items.append({"_extra": True, "_created_at": doc.get("created_at")})
                 break
@@ -527,6 +570,7 @@ def list_files():  # type: ignore
                 "gateway_url": ipfs_mod.gateway_url(doc.get("cid")) if doc.get("cid") else None,
                 "folder": doc.get("folder"),
                 "redaction_status": doc.get("redaction_status"),
+                "redaction_progress": doc.get("redaction_progress"),
                 "redacted_from": doc.get("redacted_from"),
             })
     except Exception as e:
@@ -688,7 +732,11 @@ def verify_file(file_id: str):  # type: ignore
 @bp.post("/<file_id>/analyze-redaction", strict_slashes=False)
 @require_auth
 def analyze_redaction(file_id: str):  # type: ignore
-    """Proxy to redactor service for entity detection."""
+    """Detect PII entities in a document.
+
+    Tries the external redactor microservice first (if configured and reachable),
+    then falls back to the inline regex+NER detector built into the backend.
+    """
     ensure_role(Role.USER)
     rec, canonical_id = _lookup_file(file_id)
     owner = getattr(request, "address").lower()
@@ -700,28 +748,85 @@ def analyze_redaction(file_id: str):  # type: ignore
         abort(400, "key required (form key= or X-File-Key header)")
 
     decrypted_bytes = _decrypt_file_bytes(rec, key)
-    redactor_url = current_app.config.get("REDACTOR_SERVICE_URL")
-    if not redactor_url:
-        abort(503, "redactor service not configured")
-
     filename = rec.get("original_name", "document.bin")
-    try:
-        resp = requests.post(
-            f"{redactor_url}/analyze",
-            files={"file": (filename, decrypted_bytes)},
-            timeout=30,
-        )
-        resp.raise_for_status()
-    except requests.RequestException as exc:
-        abort(502, f"redactor service error: {exc}")
 
-    return resp.json()
+    # --- Strategy 1: try external redactor microservice ---
+    redactor_url = current_app.config.get("REDACTOR_SERVICE_URL")
+    if redactor_url:
+        try:
+            resp = requests.post(
+                f"{redactor_url}/analyze",
+                files={"file": (filename, decrypted_bytes)},
+                timeout=30,
+            )
+            resp.raise_for_status()
+            current_app.logger.info("analyze-redaction: used external redactor service")
+            return resp.json()
+        except requests.RequestException as exc:
+            current_app.logger.warning(
+                "External redactor unavailable (%s), falling back to inline detector", exc
+            )
+
+    # --- Strategy 2: inline detection (always available) ---
+    try:
+        from ..core.inline_redactor import analyze_pdf_bytes
+        entities = analyze_pdf_bytes(decrypted_bytes)
+        current_app.logger.info(
+            "analyze-redaction: inline detector found %d entities", len(entities)
+        )
+        return {"entities": entities}
+    except ImportError as exc:
+        current_app.logger.error("Inline redactor import failed: %s", exc)
+        abort(503, "redaction analysis unavailable (install PyMuPDF)")
+    except Exception as exc:
+        current_app.logger.error("Inline analysis failed: %s", exc, exc_info=True)
+        abort(500, f"analysis failed: {exc}")
+
+@bp.post("/<file_id>/search-redaction", strict_slashes=False)
+@require_auth
+def search_redaction(file_id: str):  # type: ignore
+    """Search for literal text or regex patterns in a document."""
+    ensure_role(Role.USER)
+    rec, canonical_id = _lookup_file(file_id)
+    owner = getattr(request, "address").lower()
+    if rec.get("owner") != owner:
+        abort(404, "file not found")
+
+    key = request.form.get("key") or request.headers.get("X-File-Key")
+    if not key:
+        abort(400, "key required (form key= or X-File-Key header)")
+
+    query = request.form.get("query")
+    if not query:
+        abort(400, "query parameter is required")
+
+    is_regex_str = request.form.get("is_regex", "false").lower()
+    is_regex = is_regex_str in ("true", "1", "yes")
+
+    decrypted_bytes = _decrypt_file_bytes(rec, key)
+
+    try:
+        from ..core.inline_redactor import search_pdf_text
+        matches = search_pdf_text(decrypted_bytes, query, is_regex)
+        return {"matches": matches}
+    except ValueError as exc:
+        abort(400, str(exc))
+    except ImportError as exc:
+        current_app.logger.error("Inline redactor import failed: %s", exc)
+        abort(503, "search unavailable (install PyMuPDF)")
+    except Exception as exc:
+        current_app.logger.error("Search failed: %s", exc, exc_info=True)
+        abort(500, f"search failed: {exc}")
 
 
 @bp.post("/<file_id>/apply-redaction", strict_slashes=False)
 @require_auth
 def apply_redaction(file_id: str):  # type: ignore
-    """Apply redaction via redactor service and generate a ZK proof."""
+    """Apply redaction and generate a ZK proof.
+
+    Tries the external redactor microservice first (if configured and reachable),
+    then falls back to the inline PyMuPDF-based redaction engine.
+    """
     ensure_role(Role.USER)
     rec, canonical_id = _lookup_file(file_id)
     owner = getattr(request, "address").lower()
@@ -736,35 +841,72 @@ def apply_redaction(file_id: str):  # type: ignore
     if not entities_json:
         abort(400, "entities JSON required")
 
+    current_app.logger.info("apply-redaction: starting for file %s", file_id)
     decrypted_bytes = _decrypt_file_bytes(rec, key)
-    redactor_url = current_app.config.get("REDACTOR_SERVICE_URL")
-    if not redactor_url:
-        abort(503, "redactor service not configured")
-
+    current_app.logger.info("apply-redaction: decrypted OK, %d bytes", len(decrypted_bytes))
     filename = rec.get("original_name", "document.bin")
-    try:
-        resp = requests.post(
-            f"{redactor_url}/redact",
-            files={"file": (filename, decrypted_bytes)},
-            data={"entities": entities_json, "response_mode": "json"},
-            timeout=120,
-        )
-        resp.raise_for_status()
-    except requests.RequestException as exc:
-        abort(502, f"redactor service error: {exc}")
 
-    payload = resp.json()
-    try:
-        redacted_bytes = base64.b64decode(payload["redacted_b64"])
-    except Exception:
-        abort(502, "invalid redactor response (missing redacted_b64)")
+    # Attempt redaction via external service, then fall back to inline
+    redacted_bytes = None
+    redacted_name = filename
+
+    redactor_url = current_app.config.get("REDACTOR_SERVICE_URL")
+    if redactor_url:
+        try:
+            resp = requests.post(
+                f"{redactor_url}/redact",
+                files={"file": (filename, decrypted_bytes)},
+                data={"entities": entities_json, "response_mode": "json"},
+                timeout=120,
+            )
+            resp.raise_for_status()
+            payload = resp.json()
+            redacted_bytes = base64.b64decode(payload["redacted_b64"])
+            redacted_name = payload.get("filename") or filename
+            current_app.logger.info("apply-redaction: used external redactor service")
+        except Exception as exc:
+            current_app.logger.warning(
+                "External redactor unavailable (%s), falling back to inline redaction", exc
+            )
+
+    if redacted_bytes is None:
+        # --- Inline redaction fallback ---
+        try:
+            entities_data = json.loads(entities_json)
+            auto_entities = []
+            manual_boxes = []
+            if isinstance(entities_data, dict):
+                auto_entities = entities_data.get("entities", [])
+                manual_boxes = entities_data.get("manual_boxes", [])
+                search_boxes = entities_data.get("search_boxes", [])
+                if search_boxes:
+                    manual_boxes.extend(search_boxes)
+            elif isinstance(entities_data, list):
+                auto_entities = entities_data
+            else:
+                abort(400, "entities must be a JSON array or dict with entities/manual_boxes")
+        except (json.JSONDecodeError, ValueError) as exc:
+            abort(400, f"invalid entities JSON: {exc}")
+
+        try:
+            from ..core.inline_redactor import redact_pdf_bytes
+            redacted_bytes = redact_pdf_bytes(decrypted_bytes, auto_entities, manual_boxes)
+            # Generate redacted filename
+            dot = filename.rfind(".")
+            if dot >= 0:
+                redacted_name = filename[:dot] + "_redacted" + filename[dot:]
+            else:
+                redacted_name = filename + "_redacted"
+            current_app.logger.info("apply-redaction: used inline redactor")
+        except ImportError as exc:
+            current_app.logger.error("Inline redactor import failed: %s", exc)
+            abort(503, "redaction unavailable (install PyMuPDF)")
+        except Exception as exc:
+            current_app.logger.error("Inline redaction failed: %s", exc, exc_info=True)
+            abort(500, f"redaction failed: {exc}")
 
     original_sha256 = hashlib.sha256(decrypted_bytes).hexdigest()
     redacted_sha256 = hashlib.sha256(redacted_bytes).hexdigest()
-    if payload.get("original_hash") and payload.get("original_hash") != original_sha256:
-        abort(502, "redactor original hash mismatch")
-    if payload.get("redacted_hash") and payload.get("redacted_hash") != redacted_sha256:
-        abort(502, "redactor redacted hash mismatch")
 
     try:
         proof_inputs = build_redaction_inputs(decrypted_bytes, redacted_bytes)
@@ -773,15 +915,17 @@ def apply_redaction(file_id: str):  # type: ignore
     except Exception as exc:
         abort(500, f"failed to prepare redaction proof inputs: {exc}")
 
+    current_app.logger.info("apply-redaction: redaction done, %d bytes. Encrypting...", len(redacted_bytes))
     enc_filename = generate_encrypted_filename()
     try:
         encrypted_bytes = crypto_encrypt(redacted_bytes, key, rec.get("aad"))
-    except CryptoDaemonError:
+    except CryptoDaemonError as exc:
+        current_app.logger.error("apply-redaction: CryptoDaemonError on encrypt: %s", exc)
         abort(503, "crypto service unavailable")
 
+    current_app.logger.info("apply-redaction: encrypted OK, uploading to S3")
     s3_mod.upload_blob(enc_filename, encrypted_bytes)
 
-    redacted_name = payload.get("filename") or filename
     record = {
         "owner": owner,
         "original_name": redacted_name,
@@ -899,6 +1043,7 @@ def verify_redaction(file_id: str):  # type: ignore
             "anchor_tx": rec.get("redaction_anchor_tx"),
             "proof_location": proof_payload.get("proof_location"),
             "proof_hash": proof_payload.get("proof_hash"),
+            "progress": rec.get("redaction_progress"),
         }
 
     if status != "complete":

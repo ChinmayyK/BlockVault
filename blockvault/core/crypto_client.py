@@ -1,10 +1,12 @@
 """
-Persistent socket client for the blockvault_crypto daemon.
+Socket client for the blockvault_crypto daemon.
 
-Maintains a thread-safe connection pool to avoid per-request TCP
-handshake overhead.  Sensitive data (passphrase, plaintext) is
-transmitted only over the loopback/internal network — never via
-process args or environment.
+The Rust daemon currently serves a single request per TCP connection
+and then closes the socket. Reusing pooled sockets therefore causes
+intermittent "closed connection unexpectedly" failures on the next
+operation. Sensitive data (passphrase, plaintext) is transmitted only
+over the loopback/internal network, never via process args or
+environment.
 
 Protocol: 4-byte big-endian length prefix  +  JSON body.
 """
@@ -14,7 +16,6 @@ import base64
 import json
 import logging
 import os
-import queue
 import socket
 import struct
 import threading
@@ -29,22 +30,13 @@ logger = logging.getLogger(__name__)
 
 _DEFAULT_ADDR = "127.0.0.1:9876"
 _TIMEOUT = 10  # seconds (connect + read/write)
-_POOL_SIZE = 8  # max persistent connections
-
-
-# ---------------------------------------------------------------------------
-# Connection Pool
-# ---------------------------------------------------------------------------
-
 class _ConnectionPool:
-    """Thread-safe pool of persistent TCP connections to the crypto daemon."""
+    """Connection factory for the crypto daemon."""
 
-    def __init__(self, host: str, port: int, max_size: int, timeout: float):
+    def __init__(self, host: str, port: int, timeout: float):
         self._host = host
         self._port = port
         self._timeout = timeout
-        self._pool: queue.Queue[socket.socket] = queue.Queue(maxsize=max_size)
-        self._lock = threading.Lock()
 
     def _create(self) -> socket.socket:
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -54,33 +46,19 @@ class _ConnectionPool:
         return sock
 
     def acquire(self) -> socket.socket:
-        """Get a connection — reuse from pool or create fresh."""
-        try:
-            sock = self._pool.get_nowait()
-            # Quick health check: is the socket still alive?
-            try:
-                sock.getpeername()
-            except OSError:
-                # Dead connection, create a new one
-                try:
-                    sock.close()
-                except OSError:
-                    pass
-                return self._create()
-            return sock
-        except queue.Empty:
-            return self._create()
+        """Create a fresh connection for a single request."""
+        return self._create()
 
     def release(self, sock: socket.socket) -> None:
-        """Return a healthy connection to the pool."""
+        """Close a completed connection.
+
+        The daemon closes its side after one response, so retaining the
+        socket would only poison future requests.
+        """
         try:
-            self._pool.put_nowait(sock)
-        except queue.Full:
-            # Pool is full, discard this connection
-            try:
-                sock.close()
-            except OSError:
-                pass
+            sock.close()
+        except OSError:
+            pass
 
     def discard(self, sock: socket.socket) -> None:
         """Discard a broken connection."""
@@ -101,7 +79,7 @@ def _get_pool() -> _ConnectionPool:
             if _pool is None:
                 raw = os.environ.get("CRYPTO_DAEMON_ADDR", _DEFAULT_ADDR)
                 host, port_s = raw.rsplit(":", 1)
-                _pool = _ConnectionPool(host, int(port_s), _POOL_SIZE, _TIMEOUT)
+                _pool = _ConnectionPool(host, int(port_s), _TIMEOUT)
     return _pool
 
 
@@ -123,8 +101,9 @@ def _recv_exact(sock: socket.socket, n: int) -> bytes:
 def _send_request(payload: dict[str, Any]) -> dict[str, Any]:
     """Send a JSON request to the crypto daemon and return the response.
 
-    Uses the connection pool for efficiency.  On any socket error the
-    connection is discarded and a ``CryptoDaemonError`` is raised.
+    Uses a fresh daemon connection for each request. On any socket
+    error the connection is discarded and a ``CryptoDaemonError`` is
+    raised.
     """
     pool = _get_pool()
     body = json.dumps(payload).encode("utf-8")

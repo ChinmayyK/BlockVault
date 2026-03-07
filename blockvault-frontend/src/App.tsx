@@ -28,14 +28,20 @@ import { FileProvider } from "@/contexts/FileContext";
 import { RBACProvider } from "@/contexts/RBACContext";
 import { CaseProvider } from "@/contexts/CaseContext";
 import { ThemeProvider } from "@/contexts/ThemeContext";
+import { LoadingProvider } from "@/contexts/LoadingContext";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
+import { GlobalLoader } from "@/components/ui/GlobalLoader";
+import { AxiosLoadingInterceptor } from "@/components/ui/AxiosLoadingInterceptor";
+import { RouteProgress } from "@/components/ui/RouteProgress";
+import { SecureLoader } from "@/components/ui/SecureLoader";
 
+// Loading component
 // Loading component
 const PageLoader = () => (
   <div className="flex items-center justify-center min-h-screen bg-background">
     <div className="flex flex-col items-center gap-4">
-      <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin" />
-      <p className="text-sm text-muted-foreground">Loading...</p>
+      <SecureLoader size={56} />
+      <p className="text-sm text-muted-foreground animate-pulse">Loading secure environment...</p>
     </div>
   </div>
 );
@@ -56,107 +62,112 @@ const App = () => (
   <ErrorBoundary>
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
-        <AuthProvider>
-          <FileProvider>
-            <RBACProvider>
-              <CaseProvider>
-                <TooltipProvider>
-                  <Toaster />
-                  <Sonner />
-                  <HotToaster
-                    position="top-right"
-                    toastOptions={{
-                      duration: 4000,
-                      style: {
-                        background: '#0a0a0a',
-                        color: '#ffffff',
-                        border: '1px solid #1f6feb',
-                      },
-                      success: {
-                        iconTheme: {
-                          primary: '#22C55E',
-                          secondary: '#ffffff',
+        <LoadingProvider>
+          <GlobalLoader />
+          <AxiosLoadingInterceptor />
+          <AuthProvider>
+            <FileProvider>
+              <RBACProvider>
+                <CaseProvider>
+                  <TooltipProvider>
+                    <Toaster />
+                    <Sonner />
+                    <HotToaster
+                      position="top-right"
+                      toastOptions={{
+                        duration: 4000,
+                        style: {
+                          background: '#0a0a0a',
+                          color: '#ffffff',
+                          border: '1px solid #1f6feb',
                         },
-                      },
-                      error: {
-                        iconTheme: {
-                          primary: '#EF4444',
-                          secondary: '#ffffff',
+                        success: {
+                          iconTheme: {
+                            primary: '#22C55E',
+                            secondary: '#ffffff',
+                          },
                         },
-                      },
-                    }}
-                  />
-                  <BrowserRouter future={{ v7_relativeSplatPath: true }}>
-                    <Suspense fallback={<PageLoader />}>
-                      <Routes>
-                        <Route path="/" element={<IndexPage />} />
-                        <Route path="/login" element={<LoginPage />} />
-                        <Route path="/learn-more" element={<LearnMorePage />} />
-                        <Route
-                          path="/files"
-                          element={
-                            <ProtectedRoute>
-                              <MainLayout><DashboardPage /></MainLayout>
-                            </ProtectedRoute>
-                          }
-                        />
-                        <Route
-                          path="/dashboard"
-                          element={
-                            <ProtectedRoute>
-                              <MainLayout><DashboardPage /></MainLayout>
-                            </ProtectedRoute>
-                          }
-                        />
-                        <Route
-                          path="/legal"
-                          element={
-                            <ProtectedRoute>
-                              <MainLayout><LegalPage /></MainLayout>
-                            </ProtectedRoute>
-                          }
-                        />
-                        <Route
-                          path="/cases"
-                          element={
-                            <ProtectedRoute>
-                              <MainLayout><CasesPage /></MainLayout>
-                            </ProtectedRoute>
-                          }
-                        />
-                        <Route
-                          path="/blockchain"
-                          element={
-                            <ProtectedRoute>
-                              <MainLayout><BlockchainPage /></MainLayout>
-                            </ProtectedRoute>
-                          }
-                        />
-                        <Route
-                          path="/settings"
-                          element={
-                            <ProtectedRoute>
-                              <MainLayout><SettingsPage /></MainLayout>
-                            </ProtectedRoute>
-                          }
-                        />
-                        <Route
-                          path="/redact/:fileId"
-                          element={
-                            <ProtectedRoute>
-                              <MainLayout><RedactPage /></MainLayout>
-                            </ProtectedRoute>
-                          }
-                        />
-                        <Route path="*" element={<NotFoundPage />} />
-                      </Routes>
-                    </Suspense>
-                  </BrowserRouter>
-                </TooltipProvider>
-              </CaseProvider>
-            </RBACProvider>
-          </FileProvider>
-        </AuthProvider>
+                        error: {
+                          iconTheme: {
+                            primary: '#EF4444',
+                            secondary: '#ffffff',
+                          },
+                        },
+                      }}
+                    />
+                    <BrowserRouter future={{ v7_relativeSplatPath: true }}>
+                      <RouteProgress />
+                      <Suspense fallback={<PageLoader />}>
+                        <Routes>
+                          <Route path="/" element={<IndexPage />} />
+                          <Route path="/login" element={<LoginPage />} />
+                          <Route path="/learn-more" element={<LearnMorePage />} />
+                          <Route
+                            path="/files"
+                            element={
+                              <ProtectedRoute>
+                                <MainLayout><DashboardPage /></MainLayout>
+                              </ProtectedRoute>
+                            }
+                          />
+                          <Route
+                            path="/dashboard"
+                            element={
+                              <ProtectedRoute>
+                                <MainLayout><DashboardPage /></MainLayout>
+                              </ProtectedRoute>
+                            }
+                          />
+                          <Route
+                            path="/legal"
+                            element={
+                              <ProtectedRoute>
+                                <MainLayout><LegalPage /></MainLayout>
+                              </ProtectedRoute>
+                            }
+                          />
+                          <Route
+                            path="/cases"
+                            element={
+                              <ProtectedRoute>
+                                <MainLayout><CasesPage /></MainLayout>
+                              </ProtectedRoute>
+                            }
+                          />
+                          <Route
+                            path="/blockchain"
+                            element={
+                              <ProtectedRoute>
+                                <MainLayout><BlockchainPage /></MainLayout>
+                              </ProtectedRoute>
+                            }
+                          />
+                          <Route
+                            path="/settings"
+                            element={
+                              <ProtectedRoute>
+                                <MainLayout><SettingsPage /></MainLayout>
+                              </ProtectedRoute>
+                            }
+                          />
+                          <Route
+                            path="/redact/:fileId"
+                            element={
+                              <ProtectedRoute>
+                                <MainLayout><RedactPage /></MainLayout>
+                              </ProtectedRoute>
+                            }
+                          />
+                          <Route path="*" element={<NotFoundPage />} />
+                        </Routes>
+                      </Suspense>
+                    </BrowserRouter>
+                  </TooltipProvider>
+                </CaseProvider>
+              </RBACProvider>
+            </FileProvider>
+          </AuthProvider>
+        </LoadingProvider>
       </ThemeProvider>
     </QueryClientProvider>
   </ErrorBoundary>

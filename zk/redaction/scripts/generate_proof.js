@@ -164,6 +164,8 @@ async function main() {
   }
 
   const chunkCount = (inputs.chunks || []).length;
+  const totalProofs = (inputs.chunks || []).filter(c => c.mask_blocks.some(b => Number(b) === 1)).length;
+  let currentProof = 0;
   const originalChunkHashes = new Array(chunkCount).fill(BigInt(0));
   const redactedChunkHashes = new Array(chunkCount).fill(BigInt(0));
   const modifiedChunks = [];
@@ -200,6 +202,14 @@ async function main() {
       wasmPath,
       zkeyPath
     );
+
+    currentProof += 1;
+    console.log(JSON.stringify({
+      progress: true,
+      current: currentProof,
+      total: totalProofs,
+      chunk_index: chunk.index
+    }));
 
     modifiedChunks.push({
       index: chunk.index,

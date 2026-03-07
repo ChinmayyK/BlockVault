@@ -8,7 +8,7 @@ import shutil
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 
 def _project_root() -> Path:
@@ -225,7 +225,9 @@ def generate_redaction_proof(
         }
 
 
-def generate_redaction_proof_from_inputs(inputs: Dict[str, Any]) -> Dict[str, Any]:
+def generate_redaction_proof_from_inputs(
+    inputs: Dict[str, Any], progress_callback: Optional[Callable[[int, int], None]] = None
+) -> Dict[str, Any]:
     """Generate a Groth16 redaction proof package using precomputed inputs."""
     if shutil.which("node") is None:
         raise RuntimeError("node is required to generate redaction proofs")
@@ -248,9 +250,23 @@ def generate_redaction_proof_from_inputs(inputs: Dict[str, Any]) -> Dict[str, An
             str(tmp_path),
         ]
 
-        proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        
+        stdout_lines = []
+        for line in proc.stdout:
+            stdout_lines.append(line)
+            try:
+                data = json.loads(line.strip())
+                if isinstance(data, dict) and data.get("progress") and progress_callback:
+                    progress_callback(data.get("current", 0), data.get("total", 0))
+            except json.JSONDecodeError:
+                pass
+                
+        proc.wait()
         if proc.returncode != 0:
-            raise RuntimeError(f"proof generation failed: {proc.stderr.strip() or proc.stdout.strip()}")
+            stderr_output = proc.stderr.read()
+            stdout_output = "".join(stdout_lines)
+            raise RuntimeError(f"proof generation failed: {stderr_output.strip() or stdout_output.strip()}")
 
         proof_package = json.loads((tmp_path / "proof_package.json").read_text("utf-8"))
         metadata = json.loads((tmp_path / "metadata.json").read_text("utf-8"))

@@ -7,3 +7,7 @@ spacy>=3.7.0
 pikepdf>=9.0.0
 Pillow>=10.0.0
 presidio-analyzer>=2.2.351
+paddleocr>=2.7.0
+paddlepaddle>=2.6.0
+pdf2image>=1.17.0
+Pillow>=10.0.0

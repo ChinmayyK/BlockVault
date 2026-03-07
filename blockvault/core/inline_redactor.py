@@ -55,6 +55,62 @@ class Entity:
 
 
 # ---------------------------------------------------------------------------
+# Checksum helpers
+# ---------------------------------------------------------------------------
+
+# Verhoeff checksum tables for Aadhaar validation
+_VERHOEFF_D = [
+    [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+    [1, 2, 3, 4, 0, 6, 7, 8, 9, 5],
+    [2, 3, 4, 0, 1, 7, 8, 9, 5, 6],
+    [3, 4, 0, 1, 2, 8, 9, 5, 6, 7],
+    [4, 0, 1, 2, 3, 9, 5, 6, 7, 8],
+    [5, 9, 8, 7, 6, 0, 4, 3, 2, 1],
+    [6, 5, 9, 8, 7, 1, 0, 4, 3, 2],
+    [7, 6, 5, 9, 8, 2, 1, 0, 4, 3],
+    [8, 7, 6, 5, 9, 3, 2, 1, 0, 4],
+    [9, 8, 7, 6, 5, 4, 3, 2, 1, 0],
+]
+_VERHOEFF_P = [
+    [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+    [1, 5, 7, 6, 2, 8, 3, 0, 9, 4],
+    [5, 8, 0, 3, 7, 9, 6, 1, 4, 2],
+    [8, 9, 1, 6, 0, 4, 3, 5, 2, 7],
+    [9, 4, 5, 3, 1, 2, 6, 8, 7, 0],
+    [4, 2, 8, 6, 5, 7, 3, 9, 0, 1],
+    [2, 7, 9, 3, 8, 0, 6, 4, 1, 5],
+    [7, 0, 4, 6, 9, 1, 3, 2, 5, 8],
+]
+_VERHOEFF_INV = [0, 4, 3, 2, 1, 5, 6, 7, 8, 9]
+
+
+def _verhoeff_checksum(number: str) -> bool:
+    """Validate Aadhaar number using the Verhoeff algorithm."""
+    digits = [int(d) for d in number if d.isdigit()]
+    if len(digits) != 12:
+        return False
+    c = 0
+    for i, digit in enumerate(reversed(digits)):
+        c = _VERHOEFF_D[c][_VERHOEFF_P[i % 8][digit]]
+    return c == 0
+
+
+def _luhn_checksum(number: str) -> bool:
+    """Validate credit card number using the Luhn algorithm."""
+    digits = [int(d) for d in number if d.isdigit()]
+    if len(digits) < 13:
+        return False
+    checksum = 0
+    for i, d in enumerate(reversed(digits)):
+        if i % 2 == 1:
+            d *= 2
+            if d > 9:
+                d -= 9
+        checksum += d
+    return checksum % 10 == 0
+
+
+# ---------------------------------------------------------------------------
 # Regex-based PII detectors
 # ---------------------------------------------------------------------------
 
@@ -77,7 +133,15 @@ _PHONE_RE = re.compile(
     r"(?!\d)"                           # no digit after
 )
 
-# Credit card (Visa, MC, Amex, Discover) — rough patterns
+# Indian Phone (+91 prefix, 10-digit mobile)
+_INDIAN_PHONE_RE = re.compile(
+    r"(?<!\d)"
+    r"(?:\+91[\s\-]?|91[\s\-]?|0)?"
+    r"[6-9]\d{9}"
+    r"(?!\d)"
+)
+
+# Credit card (Visa, MC, Amex, Discover)
 _CREDIT_CARD_RE = re.compile(
     r"\b(?:4\d{3}|5[1-5]\d{2}|3[47]\d{2}|6(?:011|5\d{2}))"
     r"[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{1,4}\b"
@@ -88,13 +152,18 @@ _IBAN_RE = re.compile(
     r"\b[A-Z]{2}\d{2}\s?(?:\d{4}\s?){2,7}\d{1,4}\b"
 )
 
-# Date of Birth patterns (MM/DD/YYYY, DD-MM-YYYY, YYYY-MM-DD etc.)
+# Date of Birth patterns (DD/MM/YYYY, MM/DD/YYYY, YYYY-MM-DD, DD-Mon-YYYY etc.)
 _DOB_RE = re.compile(
     r"\b(?:"
-    r"\d{1,2}[/\-]\d{1,2}[/\-]\d{2,4}"
+    r"\d{1,2}[/\-\.]\d{1,2}[/\-\.]\d{2,4}"
     r"|"
-    r"\d{4}[/\-]\d{1,2}[/\-]\d{1,2}"
-    r")\b"
+    r"\d{4}[/\-\.]\d{1,2}[/\-\.]\d{1,2}"
+    r"|"
+    r"\d{1,2}[\s\-](?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)[\s\-,]*\d{2,4}"
+    r"|"
+    r"(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)[\s\-]+\d{1,2}[\s,]+\d{2,4}"
+    r")\b",
+    re.IGNORECASE,
 )
 
 # IPv4 addresses
@@ -102,28 +171,43 @@ _IPV4_RE = re.compile(
     r"\b(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\b"
 )
 
-# US passport number (9 digits)
-_PASSPORT_RE = re.compile(r"\b[A-Z]?\d{8,9}\b")
+# Indian Passport (1 uppercase letter + exactly 7 digits)
+_INDIAN_PASSPORT_RE = re.compile(r"\b[A-Z]\d{7}\b")
 
 # US Driver's license (state-dependent, simplified)
 _DL_RE = re.compile(r"\b[A-Z]\d{7,14}\b")
 
-# Aadhaar number (India, 12 digits with optional spaces)
-_AADHAAR_RE = re.compile(r"\b\d{4}\s?\d{4}\s?\d{4}\b")
+# Aadhaar number (India, 12 digits with optional spaces/dashes)
+_AADHAAR_RE = re.compile(r"\b\d{4}[\s\-]?\d{4}[\s\-]?\d{4}\b")
 
 # PAN (India, ABCDE1234F format)
 _PAN_RE = re.compile(r"\b[A-Z]{5}\d{4}[A-Z]\b")
 
-_PATTERN_MAP: List[Tuple[re.Pattern, str]] = [
-    (_SSN_RE, "SSN"),
-    (_EMAIL_RE, "EMAIL"),
-    (_PHONE_RE, "PHONE"),
-    (_CREDIT_CARD_RE, "CREDIT_CARD"),
-    (_IBAN_RE, "IBAN"),
-    (_DOB_RE, "DATE_OF_BIRTH"),
-    (_IPV4_RE, "IP_ADDRESS"),
-    (_AADHAAR_RE, "AADHAAR"),
-    (_PAN_RE, "PAN"),
+# Indian Voter ID / EPIC (3 uppercase letters + 7 digits)
+_VOTER_ID_RE = re.compile(r"\b[A-Z]{3}\d{7}\b")
+
+# GSTIN (India, 15-char: 2 digits + PAN + 1 alphanum + Z + 1 alphanum)
+_GSTIN_RE = re.compile(r"\b\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]\b")
+
+# IFSC Code (India, 4 uppercase letters + 0 + 6 alphanumeric)
+_IFSC_RE = re.compile(r"\b[A-Z]{4}0[A-Z0-9]{6}\b")
+
+_PATTERN_MAP: List[Tuple[re.Pattern, str, bool]] = [
+    # (pattern, entity_type, requires_validation)
+    (_AADHAAR_RE, "AADHAAR", True),
+    (_PAN_RE, "PAN", False),
+    (_VOTER_ID_RE, "VOTER_ID", False),
+    (_GSTIN_RE, "GSTIN", False),
+    (_IFSC_RE, "IFSC", False),
+    (_INDIAN_PASSPORT_RE, "PASSPORT", False),
+    (_INDIAN_PHONE_RE, "PHONE", False),
+    (_SSN_RE, "SSN", True),
+    (_EMAIL_RE, "EMAIL", False),
+    (_PHONE_RE, "PHONE", False),
+    (_CREDIT_CARD_RE, "CREDIT_CARD", True),
+    (_IBAN_RE, "IBAN", False),
+    (_DOB_RE, "DATE_OF_BIRTH", False),
+    (_IPV4_RE, "IP_ADDRESS", False),
 ]
 
 # ---------------------------------------------------------------------------
@@ -138,7 +222,7 @@ _CONTEXT_WORDS = {
     # Documents / IDs
     "account", "ssn", "social security", "credit card", "passport",
     "license", "driver", "dob", "date of birth", "aadhaar", "pan",
-    "tax id", "ein", "tin",
+    "tax id", "ein", "tin", "epic", "voter id", "gstin", "ifsc",
     # Contact
     "phone", "email", "address", "mobile", "fax", "cell",
     # Legal / Medical
@@ -148,34 +232,58 @@ _CONTEXT_WORDS = {
     # Financial
     "bank", "routing", "swift", "iban", "salary", "compensation",
     "payment", "invoice", "billing",
+    # Indian context
+    "aadhar", "uid", "uidai", "pan card", "ration card",
+    "domicile", "caste", "religion", "nationality",
 }
+
+
+def _validate_match(entity_type: str, matched_text: str) -> bool:
+    """Apply domain-specific validation to reduce false positives."""
+    if entity_type == "AADHAAR":
+        digits = re.sub(r"\D", "", matched_text)
+        if len(digits) != 12:
+            return False
+        if digits[0] in ("0", "1"):
+            return False
+        return _verhoeff_checksum(digits)
+    if entity_type == "SSN":
+        digits = re.sub(r"\D", "", matched_text)
+        if len(digits) != 9:
+            return False
+        if digits.startswith("000") or digits.startswith("666"):
+            return False
+        return True
+    if entity_type == "CREDIT_CARD":
+        digits = re.sub(r"\D", "", matched_text)
+        if len(digits) < 13 or len(digits) > 19:
+            return False
+        return _luhn_checksum(digits)
+    return True
 
 
 def _regex_detect(text: str) -> List[Entity]:
     """Run all regex patterns on the text and return detected entities."""
     entities: List[Entity] = []
-    for pattern, entity_type in _PATTERN_MAP:
+    for pattern, entity_type, needs_validation in _PATTERN_MAP:
         for m in pattern.finditer(text):
-            # Skip very short matches that are likely false positives
             matched_text = m.group().strip()
             if len(matched_text) < 3:
                 continue
-            # SSN: extra validation
-            if entity_type == "SSN":
-                digits = re.sub(r"\D", "", matched_text)
-                if len(digits) != 9:
-                    continue
-                if digits.startswith("000") or digits.startswith("666"):
-                    continue
 
-            # Aadhaar: extra validation (12 digits)
-            if entity_type == "AADHAAR":
-                digits = re.sub(r"\D", "", matched_text)
-                if len(digits) != 12:
-                    continue
+            # Run checksum/validation if required
+            if needs_validation and not _validate_match(entity_type, matched_text):
+                continue
 
-            # Base score
-            score = 0.75
+            # Confidence score per type
+            score_map = {
+                "AADHAAR": 0.92, "PAN": 0.90, "VOTER_ID": 0.88,
+                "GSTIN": 0.90, "IFSC": 0.85, "PASSPORT": 0.75,
+                "SSN": 0.90, "EMAIL": 0.95, "PHONE": 0.80,
+                "CREDIT_CARD": 0.92, "IBAN": 0.88,
+                "DATE_OF_BIRTH": 0.70, "IP_ADDRESS": 0.72,
+            }
+            score = score_map.get(entity_type, 0.75)
 
             entities.append(Entity(
                 text=matched_text,
@@ -184,6 +292,97 @@ def _regex_detect(text: str) -> List[Entity]:
                 end=m.end(),
                 score=round(score, 2),
                 source="regex",
+            ))
+    return entities
+
+
+# ---------------------------------------------------------------------------
+# Label-based field extraction
+# ---------------------------------------------------------------------------
+
+_LABEL_PATTERNS = [
+    (re.compile(
+        r"(?:(?:Full\s+)?Name|Applicant|Candidate|Student|Employee|Patient"
+        r"|Father(?:'s)?\s*(?:Name)?|Mother(?:'s)?\s*(?:Name)?"
+        r"|Husband(?:'s)?\s*(?:Name)?|Guardian(?:'s)?\s*(?:Name)?|Spouse(?:'s)?\s*(?:Name)?)"
+        r"\s*[:;\-\u2013\u2014]\s*(.+?)(?:\n|$)",
+        re.IGNORECASE,
+    ), "PERSON"),
+    (re.compile(
+        r"(?:Address|Residential\s+Address|Permanent\s+Address|Correspondence\s+Address"
+        r"|Present\s+Address|Communication\s+Address)"
+        r"\s*[:;\-\u2013\u2014]\s*(.+?)(?:\n\n|\n(?=[A-Z][a-z]+\s*:)|$)",
+        re.IGNORECASE | re.DOTALL,
+    ), "ADDRESS"),
+    (re.compile(
+        r"(?:Date\s+of\s+Birth|DOB|D\.O\.B|Birth\s+Date|Birthday)"
+        r"\s*[:;\-\u2013\u2014]\s*(.+?)(?:\n|$)",
+        re.IGNORECASE,
+    ), "DATE_OF_BIRTH"),
+    (re.compile(
+        r"(?:Aadhaar(?:\s+(?:No|Number|#))?|UID(?:\s+(?:No|Number))?)"
+        r"\s*[:;\-\u2013\u2014]\s*(.+?)(?:\n|$)",
+        re.IGNORECASE,
+    ), "AADHAAR"),
+    (re.compile(
+        r"(?:PAN(?:\s+(?:No|Number|Card))?)"
+        r"\s*[:;\-\u2013\u2014]\s*(.+?)(?:\n|$)",
+        re.IGNORECASE,
+    ), "PAN"),
+    (re.compile(
+        r"(?:Voter\s+ID|EPIC(?:\s+No)?|Election\s+(?:Card|ID))"
+        r"\s*[:;\-\u2013\u2014]\s*(.+?)(?:\n|$)",
+        re.IGNORECASE,
+    ), "VOTER_ID"),
+    (re.compile(
+        r"(?:Passport(?:\s+(?:No|Number))?)"
+        r"\s*[:;\-\u2013\u2014]\s*(.+?)(?:\n|$)",
+        re.IGNORECASE,
+    ), "PASSPORT"),
+    (re.compile(
+        r"(?:(?:Mobile|Phone|Cell|Contact|Tel)(?:\s+(?:No|Number|#))?)"
+        r"\s*[:;\-\u2013\u2014]\s*(.+?)(?:\n|$)",
+        re.IGNORECASE,
+    ), "PHONE"),
+    (re.compile(
+        r"(?:E[\-\s]?mail(?:\s+(?:ID|Address))?)"
+        r"\s*[:;\-\u2013\u2014]\s*(.+?)(?:\n|$)",
+        re.IGNORECASE,
+    ), "EMAIL"),
+    (re.compile(
+        r"(?:Gender|Sex)"
+        r"\s*[:;\-\u2013\u2014]\s*(.+?)(?:\n|$)",
+        re.IGNORECASE,
+    ), "GENDER"),
+    (re.compile(
+        r"(?:Religion|Caste|Category|Nationality)"
+        r"\s*[:;\-\u2013\u2014]\s*(.+?)(?:\n|$)",
+        re.IGNORECASE,
+    ), "SENSITIVE_CATEGORY"),
+]
+
+
+def _label_detect(text: str) -> List[Entity]:
+    """Extract field values from label:value patterns."""
+    entities: List[Entity] = []
+    for pattern, entity_type in _LABEL_PATTERNS:
+        for m in pattern.finditer(text):
+            value = m.group(1).strip()
+            if not value or len(value) < 2:
+                continue
+            if re.match(r"^[A-Z][a-z]+\s*:", value):
+                continue
+            if len(value) > 200:
+                value = value[:200].strip()
+            value_start = m.start(1)
+            value_end = value_start + len(value)
+            entities.append(Entity(
+                text=value,
+                entity_type=entity_type,
+                start=value_start,
+                end=value_end,
+                score=0.88,
+                source="label",
             ))
     return entities
 
@@ -209,7 +408,7 @@ def _get_spacy():
                 _spacy_nlp = spacy.load(model_name, disable=["parser", "lemmatizer"])
                 logger.info("spaCy model loaded: %s", model_name)
                 return _spacy_nlp
-            except OSError:
+            except (OSError, ValueError):
                 continue
         logger.info("No spaCy model available — skipping NER")
     except ImportError:
@@ -570,12 +769,15 @@ def detect_entities_in_text(
     # 1. Always run regex (zero dependencies)
     all_entities.extend(_regex_detect(text))
 
-    # 2. Try Presidio (includes spaCy internally)
+    # 2. Label-based field extraction
+    all_entities.extend(_label_detect(text))
+
+    # 3. Try Presidio (includes spaCy internally)
     presidio_results = _presidio_detect(text)
     if presidio_results:
         all_entities.extend(presidio_results)
     else:
-        # 3. Presidio unavailable — try standalone spaCy
+        # 4. Presidio unavailable — try standalone spaCy
         all_entities.extend(_spacy_detect(text))
 
     # 4. Custom dictionary detection

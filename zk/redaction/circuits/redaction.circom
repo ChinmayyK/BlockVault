@@ -1,6 +1,6 @@
 pragma circom 2.1.5;
 
-include "circomlib/poseidon.circom";
+include "poseidon.circom";
 
 // Merkle root over Poseidon pairwise hashing.
 template MerkleRoot(n, depth) {
@@ -56,5 +56,4 @@ template ChunkRedaction(blocks, depth) {
 
 // Default parameters:
 // chunkSize=4096, blockSize=16 => blocks=256, depth=8
-component main = ChunkRedaction(256, 8);
-public [originalHash, redactedHash, mask];
+component main {public [originalHash, redactedHash, mask]} = ChunkRedaction(256, 8);

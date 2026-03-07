@@ -17,10 +17,12 @@ PID_FILE="$SCRIPT_DIR/.blockvault_pids"
 LOG_DIR="$SCRIPT_DIR/.blockvault_logs"
 BACKEND_LOG="$LOG_DIR/backend.log"
 FRONTEND_LOG="$LOG_DIR/frontend.log"
+WORKER_LOG="$LOG_DIR/worker.log"
 
 BACKEND_PID=""
 FRONTEND_PID=""
 REDACTOR_PID=""
+WORKER_PID=""
 INFRA_STARTED="false"
 PYTHON_BIN=""
 PIP_CMD=""
@@ -39,6 +41,7 @@ read_pidfile() {
     BACKEND_PID=$(grep -E '^BACKEND_PID=' "$PID_FILE" | head -n1 | cut -d= -f2 || true)
     FRONTEND_PID=$(grep -E '^FRONTEND_PID=' "$PID_FILE" | head -n1 | cut -d= -f2 || true)
     REDACTOR_PID=$(grep -E '^REDACTOR_PID=' "$PID_FILE" | head -n1 | cut -d= -f2 || true)
+    WORKER_PID=$(grep -E '^WORKER_PID=' "$PID_FILE" | head -n1 | cut -d= -f2 || true)
     INFRA_STARTED=$(grep -E '^INFRA_STARTED=' "$PID_FILE" | head -n1 | cut -d= -f2 || true)
   fi
 }
@@ -48,6 +51,7 @@ write_pidfile() {
 BACKEND_PID=$BACKEND_PID
 FRONTEND_PID=$FRONTEND_PID
 REDACTOR_PID=$REDACTOR_PID
+WORKER_PID=$WORKER_PID
 INFRA_STARTED=$INFRA_STARTED
 EOF
 }
@@ -197,7 +201,7 @@ select_python_runtime() {
 any_services_running() {
   read_pidfile
 
-  if is_running "$BACKEND_PID" || is_running "$FRONTEND_PID" || is_running "$REDACTOR_PID"; then
+  if is_running "$BACKEND_PID" || is_running "$FRONTEND_PID" || is_running "$REDACTOR_PID" || is_running "$WORKER_PID"; then
     return 0
   fi
 
@@ -224,6 +228,10 @@ stop_services() {
     echo -e "${YELLOW}Stopping redactor (PID: $REDACTOR_PID)...${NC}"
     kill "$REDACTOR_PID" >/dev/null 2>&1 || true
   fi
+  if [ -n "$WORKER_PID" ] && is_running "$WORKER_PID"; then
+    echo -e "${YELLOW}Stopping Celery worker (PID: $WORKER_PID)...${NC}"
+    kill "$WORKER_PID" >/dev/null 2>&1 || true
+  fi
 
   # Give processes a chance to exit, then force-kill any stragglers.
   sleep 1
@@ -236,6 +244,9 @@ stop_services() {
   if [ -n "$REDACTOR_PID" ] && is_running "$REDACTOR_PID"; then
     kill_pid_force "$REDACTOR_PID"
   fi
+  if [ -n "$WORKER_PID" ] && is_running "$WORKER_PID"; then
+    kill_pid_force "$WORKER_PID"
+  fi
 
   # Fallback: kill by port if still running
   kill_by_port 5001
@@ -246,6 +257,7 @@ stop_services() {
   kill_by_pattern "python app.py"
   kill_by_pattern "uvicorn app.main:app"
   kill_by_pattern "blockvault-redactor"
+  kill_by_pattern "celery -A blockvault.core.celery_app worker"
   kill_by_pattern "vite --host"
   kill_by_pattern "node .*vite"
 
@@ -258,7 +270,7 @@ stop_services() {
 
 start_services() {
   read_pidfile
-  if is_running "$BACKEND_PID" || is_running "$FRONTEND_PID"; then
+  if is_running "$BACKEND_PID" || is_running "$FRONTEND_PID" || is_running "$WORKER_PID"; then
     echo -e "${YELLOW}Services already running.${NC}"
     echo -e "${YELLOW}Run './start.sh' again to stop them.${NC}"
     exit 0
@@ -323,7 +335,33 @@ start_services() {
     echo -e "${GREEN}✓ Python dependencies installed${NC}"
   fi
 
+  echo -e "${YELLOW}Preparing ZK proof runtime...${NC}"
+  cd "$SCRIPT_DIR/zk/redaction"
+  if [ ! -x "node_modules/.bin/snarkjs" ]; then
+    echo -e "${YELLOW}Installing ZK Node dependencies...${NC}"
+    npm install
+  fi
+  if [ -f "build/redaction.wasm" ] || [ -f "build/redaction_js/redaction.wasm" ]; then
+    if [ -f "build/redaction_final.zkey" ] && [ -f "build/verification_key.json" ]; then
+      echo -e "${GREEN}✓ ZK proof artifacts are ready${NC}"
+    elif command -v circom >/dev/null 2>&1; then
+      echo -e "${YELLOW}Generating ZK circuit artifacts...${NC}"
+      bash ./scripts/setup.sh
+      echo -e "${GREEN}✓ ZK proof artifacts generated${NC}"
+    else
+      echo -e "${YELLOW}⚠ circom is not installed. Redaction proofs will fail until zk/redaction is set up.${NC}"
+    fi
+  elif command -v circom >/dev/null 2>&1; then
+    echo -e "${YELLOW}Generating ZK circuit artifacts...${NC}"
+    bash ./scripts/setup.sh
+    echo -e "${GREEN}✓ ZK proof artifacts generated${NC}"
+  else
+    echo -e "${YELLOW}⚠ circom is not installed. Redaction proofs will fail until zk/redaction is set up.${NC}"
+  fi
+
+  cd "$SCRIPT_DIR"
   nohup env \
+    CELERY_BROKER_URL="${CELERY_BROKER_URL:-redis://localhost:6379/0}" \
     S3_BUCKET="${S3_BUCKET:-mock-bucket}" \
     S3_REGION="${S3_REGION:-us-east-1}" \
     S3_ENDPOINT="${S3_ENDPOINT:-http://localhost:9000}" \
@@ -339,6 +377,26 @@ start_services() {
     exit 1
   fi
   echo -e "${GREEN}✓ Backend started (PID: $BACKEND_PID) on http://localhost:5001${NC}"
+
+  cd "$SCRIPT_DIR"
+  echo -e "${YELLOW}Starting Celery worker...${NC}"
+  nohup env \
+    CELERY_BROKER_URL="${CELERY_BROKER_URL:-redis://localhost:6379/0}" \
+    S3_BUCKET="${S3_BUCKET:-mock-bucket}" \
+    S3_REGION="${S3_REGION:-us-east-1}" \
+    S3_ENDPOINT="${S3_ENDPOINT:-http://localhost:9000}" \
+    S3_ACCESS_KEY="${S3_ACCESS_KEY:-mock-access-key}" \
+    S3_SECRET_KEY="${S3_SECRET_KEY:-mock-secret-key}" \
+    REDACTOR_SERVICE_URL="${REDACTOR_SERVICE_URL:-http://localhost:8000}" \
+    "$PYTHON_BIN" -m celery -A blockvault.core.celery_app worker --loglevel=info --pool=solo >"$WORKER_LOG" 2>&1 &
+  WORKER_PID=$!
+  sleep 3
+  if ! is_running "$WORKER_PID"; then
+    echo -e "${RED}Celery worker failed to stay up. Recent logs:${NC}"
+    tail -n 60 "$WORKER_LOG" || true
+    exit 1
+  fi
+  echo -e "${GREEN}✓ Celery worker started (PID: $WORKER_PID)${NC}"
 
   # Start Frontend
   echo -e "${YELLOW}Starting Vite Frontend...${NC}"
@@ -369,6 +427,11 @@ start_services() {
   echo -e "${BLUE}  🌐 Frontend: ${NC}${GREEN}http://localhost:3000${NC}"
   echo -e "${BLUE}  🔧 Backend:  ${NC}${GREEN}http://localhost:5001${NC}"
   echo -e "${BLUE}  ✂️  Redactor: ${NC}${GREEN}http://localhost:8000${NC}"
+  if is_running "$WORKER_PID"; then
+    echo -e "${BLUE}  🧠 Worker:   ${NC}${GREEN}Celery proof worker running${NC}"
+  else
+    echo -e "${BLUE}  🧠 Worker:   ${NC}${RED}Not running${NC}"
+  fi
   if docker compose ps --services --filter "status=running" 2>/dev/null | grep -q "mongo"; then
     echo -e "${BLUE}  🗄️  MongoDB:  ${NC}${GREEN}localhost:27017 (Docker)${NC}"
   else

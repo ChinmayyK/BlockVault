@@ -54,6 +54,7 @@ export interface VerifyRedactionResponse {
     proof_valid?: boolean;
     valid_proof?: boolean;
     status?: string;
+    error?: string | null;
     original_hash?: string;
     redacted_hash?: string;
     original_root?: string;

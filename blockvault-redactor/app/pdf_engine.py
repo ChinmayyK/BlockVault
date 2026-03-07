@@ -11,39 +11,52 @@ import concurrent.futures
 from typing import List, Optional, Tuple, Dict, Any
 
 import fitz  # PyMuPDF
+from PIL import Image
 
 from .detector import Entity, detect_entities
+from .ocr_engine import PaddleOCREngine
+from .config import MAX_OCR_PAGES
 
 logger = logging.getLogger(__name__)
 
+# Global OCR engine instance (lazy loaded internally)
+ocr_engine = PaddleOCREngine()
+
+def _page_requires_ocr(page: fitz.Page) -> bool:
+    """Determine if a page requires OCR fallback based on extracted text length."""
+    text = page.get_text("text")
+    if not text or len(text.strip()) < 20:
+        return True
+    return False
 
 def _ocr_page(page: fitz.Page) -> List[Tuple[str, fitz.Rect]]:
-    """OCR a page using Tesseract and return (word, rect) pairs."""
+    """OCR a page using PaddleOCR and return (word, rect) pairs."""
     try:
-        import pytesseract
-        from PIL import Image
-
+        # Render the PDF page to an image
         pix = page.get_pixmap(dpi=300)
         img = Image.frombytes("RGB", (pix.width, pix.height), pix.samples)
-        data = pytesseract.image_to_data(img, output_type=pytesseract.Output.DICT)
-
+        
+        # Extract text using PaddleOCR
+        ocr_results = ocr_engine.extract_text(img)
+        
         words = []
-        for i, text in enumerate(data["text"]):
-            text = text.strip()
-            if not text:
-                continue
-            x, y, w, h = data["left"][i], data["top"][i], data["width"][i], data["height"][i]
+        for res in ocr_results:
+            text = res["text"]
+            x0, y0, x1, y1 = res["bbox"]
+            
             # Convert from pixel coords to PDF points
             scale_x = page.rect.width / pix.width
             scale_y = page.rect.height / pix.height
+            
             rect = fitz.Rect(
-                x * scale_x, y * scale_y,
-                (x + w) * scale_x, (y + h) * scale_y,
+                x0 * scale_x, y0 * scale_y,
+                x1 * scale_x, y1 * scale_y,
             )
             words.append((text, rect))
+            
         return words
     except Exception as e:
-        logger.warning("OCR failed: %s", e)
+        logger.warning("PaddleOCR failed on page %s: %s", page.number + 1, e)
         return []
 
 
@@ -55,12 +68,14 @@ def _process_page(pdf_bytes: bytes, page_num: int) -> Dict[str, Any]:
     text = page.get_text("text")
     words_raw = page.get_text("words")
     
-    if not text.strip() and not words_raw:
+    if _page_requires_ocr(page):
         # Scanned page — try OCR
+        logger.info("Page %d -> OCR required", page_num)
         ocr_words = _ocr_page(page)
-        text = " ".join(w for w, _ in ocr_words)
+        text = "\n".join(w for w, _ in ocr_words)
         words = [{"text": w, "bbox": [r.x0, r.y0, r.x1, r.y1]} for w, r in ocr_words]
     else:
+        logger.info("Page %d -> text layer detected", page_num)
         words = [
             {"text": w[4], "bbox": [w[0], w[1], w[2], w[3]]}
             for w in words_raw
@@ -80,10 +95,16 @@ def extract_text_with_positions(pdf_bytes: bytes) -> List[dict]:
     num_pages = len(doc)
     doc.close()
     
+    # Enforce OCR page limit to prevent runaway resources on massive documents
+    pages_to_process = min(num_pages, MAX_OCR_PAGES)
+    if num_pages > MAX_OCR_PAGES:
+        logger.warning("Document has %d pages, limiting OCR processing to first %d pages", num_pages, MAX_OCR_PAGES)
+    
     pages = []
-    # Use ProcessPoolExecutor for CPU-bound PyMuPDF/OCR tasks
-    with concurrent.futures.ProcessPoolExecutor(max_workers=4) as executor:
-        futures = {executor.submit(_process_page, pdf_bytes, p): p for p in range(1, num_pages + 1)}
+    # Use ThreadPoolExecutor instead of ProcessPoolExecutor to avoid 
+    # loading multiple ML models into separate memory spaces (RAM spike).
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+        futures = {executor.submit(_process_page, pdf_bytes, p): p for p in range(1, pages_to_process + 1)}
         for future in concurrent.futures.as_completed(futures):
             try:
                 pages.append(future.result())
@@ -118,19 +139,32 @@ def analyze_pdf(pdf_bytes: bytes) -> List[Entity]:
         
         for ent in entities:
             ent.page = page_num
-            # Find all visual instances of this exact string on the page
+            # 1. Try PyMuPDF native search (works for standard PDFs with text layers)
             instances = page.search_for(ent.text)
+            
             if instances:
-                # We take the first instance that roughly aligns with our token match
-                # (For overlapping/repeated names, a full alignment algorithm is needed, 
-                # but search_for usually orders them correctly).
-                # To be completely safe and highly-redactive in a security context,
-                # we can redact ALL instances of the detected sensitive string on this page.
-                
-                # For the JSON response, we'll just return the bounding box of the first hit
                 rect = instances[0]
                 ent.bbox = [round(rect.x0, 2), round(rect.y0, 2), round(rect.x1, 2), round(rect.y1, 2)]
+            else:
+                # 2. Fallback for OCR: Find matching words in our extracted 'words' list
+                # This handles scanned documents where search_for() returns empty
+                ent_words = ent.text.split()
+                matched_rects = []
                 
+                # Simple greedy match: find the individual words and union their bounding boxes
+                for w in ent_words:
+                    for extracted_word in words:
+                        if w in extracted_word["text"] or extracted_word["text"] in w:
+                            matched_rects.append(extracted_word["bbox"])
+                            break  # Move to next word in entity
+                            
+                if matched_rects:
+                    x0 = min(r[0] for r in matched_rects)
+                    y0 = min(r[1] for r in matched_rects)
+                    x1 = max(r[2] for r in matched_rects)
+                    y1 = max(r[3] for r in matched_rects)
+                    ent.bbox = [round(x0, 2), round(y0, 2), round(x1, 2), round(y1, 2)]
+
             all_entities.append(ent)
             
     doc.close()

@@ -27,6 +27,13 @@ def _build_path(name: str) -> Path:
     return _zk_dir() / "build" / name
 
 
+def _wasm_path() -> Path:
+    direct_path = _build_path("redaction.wasm")
+    if direct_path.exists():
+        return direct_path
+    return _build_path("redaction_js") / "redaction.wasm"
+
+
 def _config_path() -> Path:
     return _zk_dir() / "config.json"
 
@@ -46,7 +53,7 @@ def is_snarkjs_ready() -> bool:
         and _script_path("verify_proof.js").exists()
         and (_zk_dir() / "node_modules" / "snarkjs").exists()
         and (_zk_dir() / "node_modules" / "circomlibjs").exists()
-        and _build_path("redaction.wasm").exists()
+        and _wasm_path().exists()
         and _build_path("redaction_final.zkey").exists()
         and _build_path("verification_key.json").exists()
     )
@@ -189,6 +196,8 @@ def generate_redaction_proof(
     script = _script_path("generate_proof.js")
     if not script.exists():
         raise RuntimeError(f"missing script: {script}")
+    if not _wasm_path().exists():
+        raise RuntimeError(f"missing circuit wasm: {_wasm_path()}")
 
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp_path = Path(tmpdir)
@@ -235,6 +244,8 @@ def generate_redaction_proof_from_inputs(
     script = _script_path("generate_proof.js")
     if not script.exists():
         raise RuntimeError(f"missing script: {script}")
+    if not _wasm_path().exists():
+        raise RuntimeError(f"missing circuit wasm: {_wasm_path()}")
 
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp_path = Path(tmpdir)

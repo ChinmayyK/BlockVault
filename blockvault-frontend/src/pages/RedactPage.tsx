@@ -14,6 +14,8 @@ import { LegalModalFrame } from "@/components/legal/modals/LegalModalFrame";
 import { getApiBase } from "@/lib/getApiBase";
 import { readStoredUser } from "@/utils/authStorage";
 
+type ProofStatus = "pending" | "valid" | "invalid" | "failed" | null;
+
 export default function RedactPage() {
     const { fileId } = useParams<{ fileId: string }>();
     const navigate = useNavigate();
@@ -30,7 +32,7 @@ export default function RedactPage() {
     const [redactionResult, setRedactionResult] = useState<RedactApplyResponse | null>(null);
     const [redactionComplete, setRedactionComplete] = useState(false);
     const [redactedFileUrl, setRedactedFileUrl] = useState<string | null>(null);
-    const [proofStatus, setProofStatus] = useState<"pending" | "valid" | "invalid" | null>(null);
+    const [proofStatus, setProofStatus] = useState<ProofStatus>(null);
     const [verificationResult, setVerificationResult] = useState<VerifyRedactionResponse | null>(null);
 
     const [entities, setEntities] = useState<RedactEntity[]>([]);
@@ -61,6 +63,8 @@ export default function RedactPage() {
     const proofStatusLabel =
         proofStatus === "valid"
             ? "Proof Verified"
+            : proofStatus === "failed"
+                ? "Proof Failed"
             : proofStatus === "invalid"
                 ? "Proof Invalid"
                 : proofStatus === "pending"
@@ -361,7 +365,7 @@ export default function RedactPage() {
                 return current;
             }
             if (restoredRecord.redaction_status === "failed") {
-                return "invalid";
+                return "failed";
             }
             return "pending";
         });
@@ -494,7 +498,7 @@ export default function RedactPage() {
             setRedactionResult(result);
             setRedactionComplete(true);
             setVerificationResult(null);
-            setProofStatus(result.redaction_status === "failed" ? "invalid" : "pending");
+            setProofStatus(result.redaction_status === "failed" ? "failed" : "pending");
 
             if (result.file_id) {
                 primeRedactedFileUrl(result.file_id, confirmedPassphrase).catch((error) => {
@@ -536,6 +540,11 @@ export default function RedactPage() {
                 if (!silent) {
                     toast("Proof is still being generated.", { icon: "⏳" });
                 }
+            } else if (data.status === "failed") {
+                setProofStatus("failed");
+                if (!silent) {
+                    toast.error(data.error || "Proof generation failed.");
+                }
             } else {
                 setProofStatus("invalid");
                 if (!silent) {
@@ -544,7 +553,20 @@ export default function RedactPage() {
             }
             return data;
         } catch (err) {
-            setProofStatus("invalid");
+            const responseStatus =
+                typeof err === "object" && err && "response" in err
+                    ? (err as { response?: { status?: number } }).response?.status
+                    : undefined;
+
+            if (responseStatus === 429) {
+                setProofStatus((current) => (current === "valid" ? current : "pending"));
+                if (!silent) {
+                    toast("Proof check is being throttled. Trying again shortly.", { icon: "⏳" });
+                }
+                return null;
+            }
+
+            setProofStatus((current) => (current === "valid" ? current : "pending"));
             if (!silent) {
                 toast.error("Unable to check proof status.");
             }
@@ -561,7 +583,7 @@ export default function RedactPage() {
             return;
         }
 
-        if (proofStatus === "valid" || proofStatus === "invalid") {
+        if (proofStatus === "valid" || proofStatus === "invalid" || proofStatus === "failed") {
             return;
         }
 
@@ -583,7 +605,7 @@ export default function RedactPage() {
         void pollProofStatus();
         const intervalId = window.setInterval(() => {
             void pollProofStatus();
-        }, 4000);
+        }, 15000);
 
         return () => {
             cancelled = true;
@@ -760,21 +782,30 @@ export default function RedactPage() {
                             .
                         </p>
                     )}
-                    <p className="mt-1 text-sky-100/70">This panel updates automatically every few seconds.</p>
+                    <p className="mt-1 text-sky-100/70">This panel updates automatically while the worker is generating proofs.</p>
                 </div>
             )}
 
             <div className={`rounded-xl border px-3 py-2 text-xs font-medium ${proofStatus === "valid"
                 ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-400"
+                : proofStatus === "failed"
+                    ? "border-amber-500/20 bg-amber-500/10 text-amber-300"
                 : proofStatus === "invalid"
                     ? "border-rose-500/20 bg-rose-500/10 text-rose-400"
                     : "border-amber-500/20 bg-amber-500/10 text-amber-400"
                 }`}>
                 {proofStatus === "valid" && "✓ Proof Verified"}
+                {proofStatus === "failed" && "⚠ Proof Generation Failed"}
                 {proofStatus === "invalid" && "⚠ Proof Invalid"}
                 {proofStatus === "pending" && "Processing Proof..."}
                 {!proofStatus && "Proof has not been checked yet."}
             </div>
+
+            {proofStatus === "failed" && verificationResult?.error && (
+                <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-100/90">
+                    {verificationResult.error}
+                </div>
+            )}
 
             {(verificationResult?.original_hash || verificationResult?.redacted_hash) && (
                 <div className="space-y-2 rounded-xl border border-border bg-muted/20 p-3 text-[11px] text-muted-foreground">
@@ -845,7 +876,7 @@ export default function RedactPage() {
                             {proofStatus === "pending" ? (
                                 <Loader2 className="w-4 h-4 animate-spin text-sky-400" />
                             ) : (
-                                <CheckCircle2 className={`w-4 h-4 ${proofStatus === "valid" ? "text-green-500" : "text-amber-400"}`} />
+                                <CheckCircle2 className={`w-4 h-4 ${proofStatus === "valid" ? "text-green-500" : proofStatus === "failed" ? "text-amber-400" : "text-amber-400"}`} />
                             )}
                             Proof status: <span className="font-medium text-foreground">{proofStatusLabel}</span>
                             <button

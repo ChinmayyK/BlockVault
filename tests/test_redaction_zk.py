@@ -2,6 +2,7 @@ import os
 
 import pytest
 
+from blockvault.core import zk_redaction
 from blockvault.core.zk_redaction import (
     generate_redaction_proof,
     verify_redaction_proof,
@@ -12,6 +13,28 @@ from blockvault.core.zk_redaction import (
 
 def _snarkjs_enabled() -> bool:
     return os.getenv("ZK_REDACTION_RUN_SNARKJS", "").lower() in {"1", "true", "yes"}
+
+
+def test_snarkjs_ready_accepts_nested_circom_wasm(monkeypatch, tmp_path):
+    zk_dir = tmp_path / "zk-redaction"
+    (zk_dir / "scripts").mkdir(parents=True)
+    (zk_dir / "node_modules" / "snarkjs").mkdir(parents=True)
+    (zk_dir / "node_modules" / "circomlibjs").mkdir(parents=True)
+    (zk_dir / "build" / "redaction_js").mkdir(parents=True)
+
+    for path in (
+        zk_dir / "scripts" / "generate_proof.js",
+        zk_dir / "scripts" / "verify_proof.js",
+        zk_dir / "build" / "redaction_js" / "redaction.wasm",
+        zk_dir / "build" / "redaction_final.zkey",
+        zk_dir / "build" / "verification_key.json",
+    ):
+        path.write_text("", encoding="utf-8")
+
+    monkeypatch.setattr(zk_redaction, "_zk_dir", lambda: zk_dir)
+    monkeypatch.setattr(zk_redaction.shutil, "which", lambda name: "/usr/bin/node" if name == "node" else None)
+
+    assert is_snarkjs_ready() is True
 
 
 @pytest.mark.skipif(

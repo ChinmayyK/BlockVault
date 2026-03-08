@@ -51,7 +51,7 @@ export const FileList: React.FC<FileListProps> = React.memo(({
   const [selectedFileData, setSelectedFileData] = useState<any>(null);
   const [passphrase, setPassphrase] = useState('');
   const [showPassphraseModal, setShowPassphraseModal] = useState(false);
-  const [proofStatusById, setProofStatusById] = useState<Record<string, 'verified' | 'missing' | 'pending'>>({});
+  const [proofStatusById, setProofStatusById] = useState<Record<string, 'verified' | 'missing' | 'pending' | 'failed'>>({});
   const menuRef = useRef<HTMLDivElement | null>(null);
   const parentRef = useRef<HTMLDivElement>(null);
   const selectionContainerRef = useRef<HTMLDivElement | null>(null);
@@ -384,8 +384,18 @@ export const FileList: React.FC<FileListProps> = React.memo(({
           if (result.status === 'pending') {
             return { id, status: 'pending' as const };
           }
+          if (result.status === 'failed') {
+            return { id, status: 'failed' as const };
+          }
           return { id, status: 'missing' as const };
-        } catch {
+        } catch (error) {
+          const responseStatus =
+            typeof error === 'object' && error && 'response' in error
+              ? (error as { response?: { status?: number } }).response?.status
+              : undefined;
+          if (responseStatus === 429) {
+            return { id, status: 'pending' as const };
+          }
           return { id, status: 'missing' as const };
         }
       }),
@@ -432,6 +442,11 @@ export const FileList: React.FC<FileListProps> = React.memo(({
             next[id] = 'pending';
             changed = true;
           }
+        } else if (item.redactionStatus === 'failed') {
+          if (next[id] !== 'failed') {
+            next[id] = 'failed';
+            changed = true;
+          }
         } else if ((item.redactionStatus || item.redactedFrom) && !next[id]) {
           next[id] = 'missing';
           changed = true;
@@ -466,7 +481,7 @@ export const FileList: React.FC<FileListProps> = React.memo(({
 
     const intervalId = window.setInterval(() => {
       void refreshProofStatuses(pendingIds);
-    }, 5000);
+    }, 30000);
 
     return () => {
       window.clearInterval(intervalId);
@@ -656,12 +671,20 @@ export const FileList: React.FC<FileListProps> = React.memo(({
                     <span
                       className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold cursor-default ${proofStatus === 'verified'
                         ? 'bg-emerald-500/15 text-emerald-400'
+                        : proofStatus === 'failed'
+                          ? 'bg-rose-500/15 text-rose-400'
                         : proofStatus === 'pending'
                           ? 'bg-sky-500/15 text-sky-300'
                           : 'bg-amber-500/15 text-amber-400'
                         }`}
                     >
-                      {proofStatus === 'verified' ? '✓ Proof Verified' : proofStatus === 'pending' ? '⏳ Proof Generating' : '⚠ Proof Missing'}
+                      {proofStatus === 'verified'
+                        ? '✓ Proof Verified'
+                        : proofStatus === 'failed'
+                          ? '⚠ Proof Failed'
+                          : proofStatus === 'pending'
+                            ? '⏳ Proof Generating'
+                            : '⚠ Proof Missing'}
                     </span>
                     {proofStatus === 'pending' && file?.redaction_progress && (
                       <div className="absolute left-0 bottom-full mb-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none w-48 p-2.5 bg-slate-900 border border-slate-700/50 rounded-lg shadow-xl z-50">

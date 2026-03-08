@@ -29,10 +29,10 @@ POT_FINAL="$BUILD_DIR/pot${PTAU_POWER}_final.ptau"
 
 if [ ! -f "$POT_FINAL" ]; then
   echo "Generating Powers of Tau..."
-  "$ROOT_DIR/node_modules/.bin/snarkjs" powersoftau new bn128 "$PTAU_POWER" "$POT0" -v
+"$ROOT_DIR/node_modules/.bin/snarkjs" powersoftau new bn128 "$PTAU_POWER" "$POT0"
   "$ROOT_DIR/node_modules/.bin/snarkjs" powersoftau contribute "$POT0" "$POT1" \
     --name="blockvault-redaction" -e="blockvault-redaction"
-  "$ROOT_DIR/node_modules/.bin/snarkjs" powersoftau prepare phase2 "$POT1" "$POT_FINAL" -v
+  "$ROOT_DIR/node_modules/.bin/snarkjs" powersoftau prepare phase2 "$POT1" "$POT_FINAL"
 fi
 
 echo "Creating Groth16 setup..."

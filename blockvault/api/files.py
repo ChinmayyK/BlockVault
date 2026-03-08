@@ -1031,6 +1031,7 @@ def verify_redaction(file_id: str):  # type: ignore
             "proof_valid": valid,
             "valid_proof": valid,  # backward compatibility
             "status": status,
+            "error": rec.get("redaction_error"),
             "original_hash": rec.get("source_sha256") or proof_payload.get("original_hash"),
             "redacted_hash": rec.get("sha256") or proof_payload.get("redacted_hash"),
             "original_root": (package or {}).get("original_root") or proof_payload.get("original_root"),

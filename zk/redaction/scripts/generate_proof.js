@@ -80,6 +80,21 @@ function maskBlocks(originalChunk, redactedChunk, blockSize) {
   return mask;
 }
 
+function resolveWasmPath(circuitDir) {
+  const candidates = [
+    path.join(circuitDir, "build", "redaction.wasm"),
+    path.join(circuitDir, "build", "redaction_js", "redaction.wasm"),
+  ];
+
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
+  }
+
+  return candidates[0];
+}
+
 async function main() {
   const args = parseArgs(process.argv);
   const circuitDir = path.resolve(args["circuit-dir"] || path.join(__dirname, ".."));
@@ -157,7 +172,7 @@ async function main() {
     return level[0];
   }
 
-  const wasmPath = path.join(circuitDir, "build", "redaction.wasm");
+  const wasmPath = resolveWasmPath(circuitDir);
   const zkeyPath = path.join(circuitDir, "build", "redaction_final.zkey");
   if (!fs.existsSync(wasmPath) || !fs.existsSync(zkeyPath)) {
     throw new Error("Missing circuit artifacts. Run scripts/setup.sh first.");

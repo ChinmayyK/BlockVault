@@ -39,6 +39,7 @@ build/
 
 # Logs
 *.log
+.blockvault_logs/
 
 # Rust
 target/

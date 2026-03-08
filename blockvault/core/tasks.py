@@ -114,6 +114,7 @@ def generate_redaction_proof_task(self: Any, file_id: str) -> Dict[str, Any]:
         from blockvault.core import onchain as onchain_mod  # noqa: WPS433
         from blockvault.core.zk_redaction import (
             generate_redaction_proof_from_inputs,
+            is_snarkjs_ready,
             redaction_proof_key,
         )  # noqa: WPS433
 
@@ -129,14 +130,33 @@ def generate_redaction_proof_task(self: Any, file_id: str) -> Dict[str, Any]:
         inputs_key = rec.get("redaction_inputs_location")
         if not inputs_key:
             _set_status(coll, rec, "redaction_status", "failed")
+            coll.update_one(
+                {"_id": rec["_id"]},
+                {"$set": {"redaction_error": "missing inputs", "redaction_progress": None}},
+            )
             return {"file_id": file_id, "status": "failed", "error": "missing inputs"}
+
+        if not is_snarkjs_ready():
+            error = (
+                "zk redaction runtime not ready "
+                "(missing node_modules or circuit artifacts in zk/redaction)"
+            )
+            _set_status(coll, rec, "redaction_status", "failed")
+            coll.update_one(
+                {"_id": rec["_id"]},
+                {"$set": {"redaction_error": error, "redaction_progress": None}},
+            )
+            return {"file_id": file_id, "status": "failed", "error": error}
 
         try:
             inputs_blob = s3_mod.download_blob(inputs_key)
             inputs = json.loads(inputs_blob.decode("utf-8"))
         except Exception as exc:
             _set_status(coll, rec, "redaction_status", "failed")
-            coll.update_one({"_id": rec["_id"]}, {"$set": {"redaction_error": str(exc)}})
+            coll.update_one(
+                {"_id": rec["_id"]},
+                {"$set": {"redaction_error": str(exc), "redaction_progress": None}},
+            )
             return {"file_id": file_id, "status": "failed", "error": str(exc)}
 
         def _on_progress(current: int, total: int):
@@ -155,7 +175,10 @@ def generate_redaction_proof_task(self: Any, file_id: str) -> Dict[str, Any]:
                 raise self.retry(exc=exc)
             except self.MaxRetriesExceededError:
                 _set_status(coll, rec, "redaction_status", "failed")
-                coll.update_one({"_id": rec["_id"]}, {"$set": {"redaction_error": str(exc)}})
+                coll.update_one(
+                    {"_id": rec["_id"]},
+                    {"$set": {"redaction_error": str(exc), "redaction_progress": None}},
+                )
                 return {"file_id": file_id, "status": "failed", "error": str(exc)}
 
         proof_package = proof_bundle.get("proof_package", {})
@@ -166,7 +189,10 @@ def generate_redaction_proof_task(self: Any, file_id: str) -> Dict[str, Any]:
             s3_mod.upload_blob(proof_location, json.dumps(proof_package).encode("utf-8"))
         except Exception as exc:
             _set_status(coll, rec, "redaction_status", "failed")
-            coll.update_one({"_id": rec["_id"]}, {"$set": {"redaction_error": str(exc)}})
+            coll.update_one(
+                {"_id": rec["_id"]},
+                {"$set": {"redaction_error": str(exc), "redaction_progress": None}},
+            )
             return {"file_id": file_id, "status": "failed", "error": str(exc)}
 
         # Anchor redaction proof commitment on-chain (best-effort)
@@ -198,6 +224,11 @@ def generate_redaction_proof_task(self: Any, file_id: str) -> Dict[str, Any]:
             "redaction_proof": existing_proof,
             "redaction_anchor_tx": anchor_tx,
             "redaction_inputs_location": None,
+            "redaction_error": None,
+            "redaction_progress": {
+                "current": len(metadata.get("modified_chunks") or []),
+                "total": len(metadata.get("modified_chunks") or []),
+            },
         }
         coll.update_one({"_id": rec["_id"]}, {"$set": update})
 

@@ -1,5 +1,5 @@
 {
   "chunkSize": 4096,
   "blockSize": 16,
-  "ptauPower": 12
+  "ptauPower": 18
 }

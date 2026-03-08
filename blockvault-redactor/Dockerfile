@@ -1,10 +1,11 @@
 # syntax=docker/dockerfile:1
 FROM python:3.11-slim
 
-# Install system dependencies for PyMuPDF, OCR, and security sandboxing
+# Install system dependencies for PyMuPDF, OCR (PaddleOCR/OpenCV), and security sandboxing
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    tesseract-ocr \
-    tesseract-ocr-eng \
+    poppler-utils \
+    libgl1-mesa-glx \
+    libglib2.0-0 \
     libmupdf-dev \
     gcc \
     g++ \

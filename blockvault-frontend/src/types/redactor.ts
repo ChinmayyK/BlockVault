@@ -6,6 +6,14 @@ export interface RedactEntity {
     bbox: [number, number, number, number]; // [x0, y0, x1, y1]
     score?: number;
     approved?: boolean; // Client-side state to track if user wants to redact this
+    group_id?: string; // Links identical repeated terms
+}
+
+export interface RedactionGroup {
+    id: string; // The group_id linking entities
+    term: string; // The normalized text
+    count: number; // Total number of instances
+    entityType: string; // Associated entity type, e.g. PERSON
 }
 
 export interface ManualRect {
@@ -25,8 +33,15 @@ export interface SearchMatch {
     bbox: [number, number, number, number];
 }
 
+export interface RiskReport {
+    risk_level: "Low" | "Medium" | "High" | "Critical";
+    entities: Record<string, number>;
+    insights: string[];
+}
+
 export interface AnalyzeResponse {
     entities: RedactEntity[];
+    risk_report?: RiskReport;
 }
 
 export interface RedactRequest {

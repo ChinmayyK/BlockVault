@@ -9,9 +9,9 @@ import {
   Clock,
   MoreVertical,
   Lock,
-  X,
   Loader2,
   Shield,
+  Search,
 } from 'lucide-react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useFiles } from '@/contexts/FileContext';
@@ -22,6 +22,11 @@ import { LegalModalFrame } from '@/components/legal/modals/LegalModalFrame';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { verifyRedaction } from '@/api/redactor';
+import { ConfirmModal } from '@/components/ui/ConfirmModal';
+import { useAuth } from '@/contexts/AuthContext';
+import { canRedact, canShare, canDelete, canRevokeShare } from '@/utils/permissions';
+import { FileActionsMenu } from './FileActionsMenu';
+import { FileDetailsPanel } from './FileDetailsPanel';
 
 interface FileListProps {
   files?: any[];
@@ -32,6 +37,7 @@ interface FileListProps {
   hasMore?: boolean;
   onLoadMore?: () => void;
   isLoadingMore?: boolean;
+  workspaceContext?: string;
 }
 
 export const FileList: React.FC<FileListProps> = React.memo(({
@@ -43,8 +49,10 @@ export const FileList: React.FC<FileListProps> = React.memo(({
   hasMore = false,
   onLoadMore,
   isLoadingMore = false,
+  workspaceContext,
 }) => {
   const { downloadFile, deleteFile, revokeShare } = useFiles();
+  const { user } = useAuth();
   const navigate = useNavigate();
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
@@ -52,7 +60,9 @@ export const FileList: React.FC<FileListProps> = React.memo(({
   const [passphrase, setPassphrase] = useState('');
   const [showPassphraseModal, setShowPassphraseModal] = useState(false);
   const [proofStatusById, setProofStatusById] = useState<Record<string, 'verified' | 'missing' | 'pending' | 'failed'>>({});
-  const menuRef = useRef<HTMLDivElement | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedDetailsFile, setSelectedDetailsFile] = useState<any>(null);
+
   const parentRef = useRef<HTMLDivElement>(null);
   const selectionContainerRef = useRef<HTMLDivElement | null>(null);
   const loadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
@@ -72,6 +82,17 @@ export const FileList: React.FC<FileListProps> = React.memo(({
     left: number;
     width: number;
   } | null>(null);
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: React.ReactNode;
+    onConfirm: () => void;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {},
+  });
 
   const MENU_DIMENSIONS = {
     file: { width: 240, height: 180 },
@@ -82,27 +103,31 @@ export const FileList: React.FC<FileListProps> = React.memo(({
     setSelectedIds(new Set());
   }, []);
 
-  const handleItemClick = useCallback((fileId: string, event: React.MouseEvent) => {
-    event.preventDefault();
-    event.stopPropagation();
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      const isMultiModifier = event.metaKey || event.ctrlKey;
-      if (!isMultiModifier) {
-        // Single selection
-        next.clear();
-        next.add(fileId);
+  const handleItemClick = useCallback(
+    (id: string, event: React.MouseEvent) => {
+      // Toggle side panel on item click instead of selection if single click
+      if (event.ctrlKey || event.metaKey || event.shiftKey) {
+          // selection logic
+          setSelectedIds((prev) => {
+            const next = new Set(prev);
+            if (next.has(id)) {
+              next.delete(id);
+            } else {
+              next.add(id);
+            }
+            return next;
+          });
       } else {
-        // Toggle selection
-        if (next.has(fileId)) {
-          next.delete(fileId);
-        } else {
-          next.add(fileId);
-        }
+          // Find the file and open details panel
+          const clickedFile = (files || []).find(f => (f.file_id || f.id || f._id) === id) 
+                           || (shares || []).find(s => (s.share_id || s.id) === id);
+          if (clickedFile) {
+              setSelectedDetailsFile(clickedFile);
+          }
       }
-      return next;
-    });
-  }, []);
+    },
+    [files, shares],
+  );
 
   const openFileContextMenuAtPosition = useCallback(
     (
@@ -174,6 +199,8 @@ export const FileList: React.FC<FileListProps> = React.memo(({
     setMenuAnchor({ id, kind, data, top, left, width });
   };
 
+  const menuRef = useRef<HTMLDivElement>(null); // Added menuRef for outside click detection
+
   useEffect(() => {
     if (!menuAnchor) return;
 
@@ -239,7 +266,6 @@ export const FileList: React.FC<FileListProps> = React.memo(({
 
   const handleDownload = async (fileId: string, file?: any) => {
     console.log('📁 handleDownload called', { fileId, file });
-    closeMenu();
 
     // For shared files with encrypted_key, download directly without asking for passphrase
     if (file && file.encrypted_key) {
@@ -281,18 +307,28 @@ export const FileList: React.FC<FileListProps> = React.memo(({
     }
   };
 
-  const handleDelete = async (fileId: string) => {
-    if (window.confirm('Are you sure you want to delete this file?')) {
-      closeMenu();
-      await deleteFile(fileId);
-    }
+  const handleDelete = (fileId: string) => {
+    setConfirmModal({
+      isOpen: true,
+      title: 'Delete File',
+      message: 'Are you sure you want to delete this file? This action cannot be undone.',
+      onConfirm: async () => {
+        setConfirmModal(prev => ({ ...prev, isOpen: false }));
+        await deleteFile(fileId);
+      }
+    });
   };
 
-  const handleRevokeShare = async (shareId: string) => {
-    if (window.confirm('Are you sure you want to revoke this share?')) {
-      closeMenu();
-      await revokeShare(shareId);
-    }
+  const handleRevokeShare = (shareId: string) => {
+    setConfirmModal({
+      isOpen: true,
+      title: 'Revoke Share',
+      message: 'Are you sure you want to revoke this share? The recipient will lose access.',
+      onConfirm: async () => {
+        setConfirmModal(prev => ({ ...prev, isOpen: false }));
+        await revokeShare(shareId);
+      }
+    });
   };
 
   const getFileIcon = (fileName?: string) => {
@@ -354,7 +390,20 @@ export const FileList: React.FC<FileListProps> = React.memo(({
   );
 
   // Virtual scrolling setup - enable for both list and grid views when there are many items
-  const itemsToRender = type === 'shares' ? (shares || []).filter(share => share && typeof share === 'object') : (files || []).filter(file => file && typeof file === 'object');
+  const baseItems = type === 'shares' ? (shares || []).filter(share => share && typeof share === 'object') : (files || []).filter(file => file && typeof file === 'object');
+  
+  // Filter by search query
+  const itemsToRender = useMemo(() => {
+    if (!searchQuery.trim()) return baseItems;
+    const lowerQuery = searchQuery.toLowerCase();
+    return baseItems.filter((item: any) => {
+        const nameMatch = (item.name || item.file_name || item.original_name || '').toLowerCase().includes(lowerQuery);
+        const folderMatch = (item.folder || '').toLowerCase().includes(lowerQuery);
+        const userMatch = (item.user_address || item.recipient || item.shared_with || '').toLowerCase().includes(lowerQuery);
+        return nameMatch || folderMatch || userMatch;
+    });
+  }, [baseItems, searchQuery]);
+
   const shouldUseVirtualScrolling = itemsToRender.length > 20;
 
   const fileProofMeta = useMemo(
@@ -645,8 +694,11 @@ export const FileList: React.FC<FileListProps> = React.memo(({
         variant="premium"
         data-file-id={fileId}
         onClick={(event) => handleItemClick(fileId, event)}
-        onDoubleClick={(event) => openFileContextMenuAtPosition(event, fileId, file)}
-        onContextMenu={(event) => openFileContextMenuAtPosition(event, fileId, file)}
+        onDoubleClick={(event) => {
+          event.stopPropagation();
+          event.preventDefault();
+          handleDownload(fileId, file);
+        }}
         className={`group relative cursor-pointer border ${isSelected
           ? 'border-accent-blue/70 ring-2 ring-accent-blue/40 shadow-[0_0_35px_hsl(var(--accent-blue-glow))]'
           : 'border-borderAccent/20'
@@ -661,10 +713,17 @@ export const FileList: React.FC<FileListProps> = React.memo(({
                 <div className="absolute inset-0 rounded-xl bg-white/40 opacity-0 group-hover:opacity-100 transition-opacity dark:bg-white/10" />
               </div>
               <div className="flex-1 min-w-0">
-                <ScrollingText
-                  text={fileName}
-                  className="font-semibold text-foreground mb-1 group-hover:text-primary transition-colors"
-                />
+                <div className="flex items-center gap-2 mb-1">
+                  <ScrollingText
+                    text={fileName}
+                    className="font-semibold text-foreground group-hover:text-primary transition-colors max-w-[calc(100%-60px)]"
+                  />
+                  {user?.role && (
+                    <span className="px-2 py-0.5 text-[10px] uppercase font-bold tracking-wider rounded bg-primary/20 text-primary border border-primary/30 flex-shrink-0">
+                      {user.role}
+                    </span>
+                  )}
+                </div>
                 <p className="text-xs text-muted-foreground font-medium">{formatFileSize(fileSize)}</p>
                 {type === 'my-files' && (
                   <div className="relative group inline-block mt-2">
@@ -704,13 +763,21 @@ export const FileList: React.FC<FileListProps> = React.memo(({
                 )}
               </div>
             </div>
-            <div className="relative flex-shrink-0">
-              <button
-                onClick={(event) => toggleMenu(event, fileId, 'file', file)}
-                className="p-1 text-muted-foreground hover:text-foreground transition-colors opacity-0 group-hover:opacity-100"
-              >
-                <MoreVertical className="w-4 h-4" />
-              </button>
+            <div className="relative flex-shrink-0 z-10" onClick={(e) => e.stopPropagation()}>
+              <FileActionsMenu
+                  fileId={fileId}
+                  fileName={fileName}
+                  canRedact={canRedact(user?.role) && (fileName.toLowerCase().endsWith('.pdf'))}
+                  canShare={canShare(user?.role)}
+                  canDelete={canDelete(user?.role)}
+                  hasProof={proofStatus === 'verified'}
+                  isShared={false}
+                  onDownload={() => handleDownload(fileId, file)}
+                  onRedact={() => navigate(`/redact/${fileId}`)}
+                  onShare={() => onShare && onShare(fileId)}
+                  onVerify={() => {}} // Could dispatch a proof verification manually if needed
+                  onDelete={() => handleDelete(fileId)}
+              />
             </div>
           </div>
 
@@ -738,7 +805,7 @@ export const FileList: React.FC<FileListProps> = React.memo(({
               <Download className="w-3.5 h-3.5" />
               Download
             </Button>
-            {type === 'my-files' && onShare && (
+            {type === 'my-files' && onShare && canShare(user?.role) && (
               <Button
                 onClick={() => onShare(fileId)}
                 variant="outline"
@@ -749,7 +816,7 @@ export const FileList: React.FC<FileListProps> = React.memo(({
                 Share
               </Button>
             )}
-            {type === 'shared' && (
+            {type === 'shared' && canRevokeShare(user?.role) && (
               <Button
                 onClick={() => handleRevokeShare(file.share_id || file.id)}
                 variant="outline"
@@ -765,7 +832,7 @@ export const FileList: React.FC<FileListProps> = React.memo(({
         </div>
       </Card>
     );
-  }, [type, onShare, toggleMenu, handleDownload, handleItemClick, openFileContextMenuAtPosition, selectedIds]);
+  }, [type, onShare, handleDownload, handleItemClick, selectedIds, user?.role, proofStatusById, navigate]);
 
   const renderShareCard = useCallback((share: any, index: number) => {
     const shareId = share?.share_id || 'unknown';
@@ -777,7 +844,13 @@ export const FileList: React.FC<FileListProps> = React.memo(({
       <Card
         key={shareId}
         variant="premium"
-        className="group border border-borderAccent/20 transition-all animate-in fade-in slide-in-from-bottom-4 duration-500"
+        onClick={(event) => handleItemClick(shareId, event)}
+        onDoubleClick={(event) => {
+          event.stopPropagation();
+          event.preventDefault();
+          handleDownload(shareId, share);
+        }}
+        className="cursor-pointer group border border-borderAccent/20 transition-all animate-in fade-in slide-in-from-bottom-4 duration-500"
         style={{ animationDelay: `${Math.min(index, 20) * 50}ms`, animationFillMode: 'both' }}
       >
         <div className="p-5">
@@ -797,13 +870,22 @@ export const FileList: React.FC<FileListProps> = React.memo(({
                 <p className="text-sm text-muted-foreground font-medium">Shared with recipient</p>
               </div>
             </div>
-            <div className="relative">
-              <button
-                onClick={(event) => toggleMenu(event, shareId, 'share', share)}
-                className="p-2 text-muted-foreground hover:text-foreground hover:bg-accent rounded-lg transition-all group"
-              >
-                <MoreVertical className="w-4 h-4 group-hover:scale-110 transition-transform" />
-              </button>
+            <div className="relative z-10" onClick={(e) => e.stopPropagation()}>
+              <FileActionsMenu
+                  fileId={shareId}
+                  fileName={fileName}
+                  canRedact={false}
+                  canShare={false}
+                  canDelete={true}
+                  hasProof={false}
+                  isShared={true}
+                  onDownload={() => handleDownload(shareId, share)}
+                  onRedact={() => {}}
+                  onShare={() => {}}
+                  onVerify={() => {}}
+                  onRevoke={() => handleRevokeShare(shareId)}
+                  onDelete={() => {}}
+              />
             </div>
           </div>
           <div className="space-y-3 p-4 bg-accent rounded-xl border border-border/60">
@@ -822,7 +904,7 @@ export const FileList: React.FC<FileListProps> = React.memo(({
         </div>
       </Card>
     );
-  }, [toggleMenu]);
+  }, [handleDownload, handleRevokeShare]);
 
   const loadMoreSection = hasMore && onLoadMore ? (
     <div className="flex flex-col items-center mt-6 space-y-2">
@@ -856,6 +938,17 @@ export const FileList: React.FC<FileListProps> = React.memo(({
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
       >
+        {workspaceContext && (
+          <div className="bg-primary/5 rounded-lg border border-primary/20 px-4 py-3 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-primary animate-pulse" />
+              <span className="text-sm font-medium text-foreground">
+                Workspace: <span className="text-primary font-bold">{workspaceContext}</span>
+              </span>
+            </div>
+          </div>
+        )}
+
         {(shares || []).length === 0 ? (
           <Card variant="premium" className="text-center py-24 animate-fade-in-up">
             <div className="relative mb-10 inline-block">
@@ -957,14 +1050,38 @@ export const FileList: React.FC<FileListProps> = React.memo(({
   }
 
   return (
-    <div
-      className="space-y-4"
-      ref={selectionContainerRef}
-      onMouseDown={handleMouseDown}
-      onMouseMove={handleMouseMove}
-      onMouseUp={handleMouseUp}
-    >
-      {(files || []).length === 0 ? (
+    <div className="flex h-full w-full relative">
+      <div
+        className="space-y-4 flex-1 min-w-0"
+        ref={selectionContainerRef}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+      >
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            {workspaceContext && (
+                <div className="bg-primary/5 rounded-lg border border-primary/20 px-4 py-3 flex items-center justify-between w-full sm:w-auto">
+                    <div className="flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-primary animate-pulse" />
+                        <span className="text-sm font-medium text-foreground">
+                        Workspace: <span className="text-primary font-bold">{workspaceContext}</span>
+                        </span>
+                    </div>
+                </div>
+            )}
+            <div className="relative w-full sm:w-80 ml-auto">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <input
+                    type="text"
+                    placeholder="Search files by name, folder, or user..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full pl-9 pr-4 py-2 text-sm bg-card border border-border/60 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 text-foreground"
+                />
+            </div>
+        </div>
+
+        {(files || []).length === 0 && (shares || []).length === 0 && !searchQuery ? (
         <Card variant="premium" className="text-center py-24 animate-fade-in-up">
           <div className="relative mb-10 inline-block">
             <div className="w-32 h-32 bg-gradient-to-br from-primary via-primary/80 to-accent rounded-3xl flex items-center justify-center mx-auto animate-float shadow-2xl">
@@ -1115,108 +1232,25 @@ export const FileList: React.FC<FileListProps> = React.memo(({
           </div>
         </LegalModalFrame>
       )}
-      {menuAnchor && typeof document !== 'undefined' && createPortal(
-        <div
-          ref={menuRef}
-          className="fixed z-[1000] overflow-hidden rounded-2xl border border-border bg-[hsl(var(--popover))] text-foreground shadow-[0_25px_50px_-12px_hsl(var(--accent-blue)_/_0.35)] animate-in fade-in zoom-in"
-          style={{ top: menuAnchor.top, left: menuAnchor.left, width: menuAnchor.width }}
-        >
-          {menuAnchor.kind === 'file' ? (
-            <>
-              <div className="px-4 py-3 border-b border-border/60">
-                <p className="text-xs uppercase tracking-[0.25em] text-muted-foreground">File Actions</p>
-                <p className="text-sm text-foreground truncate">
-                  {menuAnchor.data?.name || menuAnchor.data?.file_name || menuAnchor.data?.original_name || 'Untitled File'}
-                </p>
-              </div>
-              <button
-                onClick={() => handleDownload(menuAnchor.data?.file_id || menuAnchor.data?.id || menuAnchor.data?._id, menuAnchor.data)}
-                className="flex w-full items-center justify-between gap-3 px-4 py-3 text-sm text-foreground hover:bg-primary/10 transition-colors"
-              >
-                <span className="flex items-center gap-2 font-medium">
-                  <Download className="w-4 h-4 text-info" />
-                  Download
-                </span>
-                <span className="text-[10px] uppercase tracking-widest text-muted-foreground">Ctrl+D</span>
-              </button>
-              {type === 'my-files' && onShare && (
-                <button
-                  onClick={() => {
-                    onShare(menuAnchor.data?.file_id || menuAnchor.data?.id || menuAnchor.data?._id);
-                    closeMenu();
-                  }}
-                  className="flex w-full items-center justify-between gap-3 px-4 py-3 text-sm text-foreground hover:bg-primary/10 transition-colors"
-                >
-                  <span className="flex items-center gap-2 font-medium">
-                    <Share2 className="w-4 h-4 text-primary" />
-                    Share Securely
-                  </span>
-                  <span className="text-[10px] uppercase tracking-widest text-muted-foreground">Ctrl+S</span>
-                </button>
-              )}
-              {type === 'my-files' && (
-                <button
-                  onClick={() => handleDelete(menuAnchor.data?.file_id || menuAnchor.data?.id || menuAnchor.data?._id)}
-                  className="flex w-full items-center justify-between gap-3 px-4 py-3 text-sm text-destructive hover:bg-destructive/10 transition-colors"
-                >
-                  <span className="flex items-center gap-2 font-medium">
-                    <Trash2 className="w-4 h-4" />
-                    Delete Permanently
-                  </span>
-                  <span className="text-[10px] uppercase tracking-widest text-destructive">Danger</span>
-                </button>
-              )}
-              {type === 'my-files' && (menuAnchor.data?.name?.toLowerCase().endsWith('.pdf') || menuAnchor.data?.file_name?.toLowerCase().endsWith('.pdf')) && (
-                <button
-                  onClick={() => {
-                    navigate(`/redact/${menuAnchor.data?.file_id || menuAnchor.data?.id || menuAnchor.data?._id}`);
-                    closeMenu();
-                  }}
-                  className="flex w-full items-center justify-between gap-3 px-4 py-3 text-sm text-orange-500 hover:bg-orange-500/10 transition-colors"
-                >
-                  <span className="flex items-center gap-2 font-medium">
-                    <Shield className="w-4 h-4" />
-                    Redact Document
-                  </span>
-                  <span className="text-[10px] uppercase tracking-widest text-orange-500">Secure</span>
-                </button>
-              )}
-              {type === 'shared' && (
-                <button
-                  onClick={() => handleRevokeShare(menuAnchor.data?.share_id || menuAnchor.data?.id)}
-                  className="flex w-full items-center justify-between gap-3 px-4 py-3 text-sm text-destructive hover:bg-destructive/10 transition-colors"
-                >
-                  <span className="flex items-center gap-2 font-medium">
-                    <Trash2 className="w-4 h-4" />
-                    Remove from List
-                  </span>
-                  <span className="text-[10px] uppercase tracking-widest text-muted-foreground">Decline</span>
-                </button>
-              )}
-            </>
-          ) : (
-            <>
-              <div className="px-4 py-3 border-b border-border/60">
-                <p className="text-xs uppercase tracking-[0.25em] text-muted-foreground">Share Actions</p>
-                <p className="text-sm text-foreground truncate">
-                  {menuAnchor.data?.file_name || menuAnchor.data?.name || 'Shared File'}
-                </p>
-              </div>
-              <button
-                onClick={() => handleRevokeShare(menuAnchor.data?.share_id || menuAnchor.data?.id)}
-                className="flex w-full items-center justify-between gap-3 px-4 py-3 text-sm text-destructive hover:bg-destructive/10 transition-colors"
-              >
-                <span className="flex items-center gap-2 font-semibold">
-                  <X className="w-4 h-4" />
-                  Revoke Share
-                </span>
-                <span className="text-[10px] uppercase tracking-widest text-destructive">Danger</span>
-              </button>
-            </>
-          )}
-        </div>,
-        document.body
+
+      <ConfirmModal
+        isOpen={confirmModal.isOpen}
+        title={confirmModal.title}
+        message={confirmModal.message}
+        onConfirm={confirmModal.onConfirm}
+        onCancel={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+        isDanger={true}
+        confirmText="Confirm"
+      />
+      </div>
+
+      {selectedDetailsFile && (
+          <FileDetailsPanel 
+              file={selectedDetailsFile} 
+              onClose={() => setSelectedDetailsFile(null)} 
+          />
       )}
     </div>
   );
 });
+

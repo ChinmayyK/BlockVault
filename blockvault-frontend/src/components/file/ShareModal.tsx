@@ -16,7 +16,7 @@ interface ShareModalProps {
 }
 
 export const ShareModal: React.FC<ShareModalProps> = ({ fileId, onClose }) => {
-  const { loading } = useFiles();
+  const { loading, outgoingShares, revokeShare } = useFiles();
   const [recipientAddress, setRecipientAddress] = useState('');
   const [recipientEmail, setRecipientEmail] = useState('');
   const [useEmail, setUseEmail] = useState(false);
@@ -25,6 +25,8 @@ export const ShareModal: React.FC<ShareModalProps> = ({ fileId, onClose }) => {
   const [hasStoredKey, setHasStoredKey] = useState<boolean | null>(null);
   const [sharing, setSharing] = useState(false);
   const [shareStatus, setShareStatus] = useState<string>('');
+  const [selectedRole, setSelectedRole] = useState<'VIEWER' | 'EDITOR'>('VIEWER');
+
 
   const API_BASE = resolveApiBase();
 
@@ -141,6 +143,7 @@ export const ShareModal: React.FC<ShareModalProps> = ({ fileId, onClose }) => {
           body: JSON.stringify({
             recipient: recipientToUse,
             passphrase: decryptedPassphrase, // Server-side encryption for email shares
+            role: selectedRole,
           }),
         });
 
@@ -179,6 +182,7 @@ export const ShareModal: React.FC<ShareModalProps> = ({ fileId, onClose }) => {
             body: JSON.stringify({
               recipient: recipientNormalized,
               passphrase: decryptedPassphrase, // Server will encrypt and generate keys
+              role: selectedRole,
             }),
           });
 
@@ -204,6 +208,7 @@ export const ShareModal: React.FC<ShareModalProps> = ({ fileId, onClose }) => {
             body: JSON.stringify({
               recipient: recipientNormalized,
               passphrase: decryptedPassphrase,
+              role: selectedRole,
             }),
           });
 
@@ -243,6 +248,7 @@ export const ShareModal: React.FC<ShareModalProps> = ({ fileId, onClose }) => {
         body: JSON.stringify({
           recipient: recipientNormalized,
           encrypted_for_recipient: encryptedForRecipientB64, // Server never sees plaintext
+          role: selectedRole,
         }),
       });
 
@@ -263,7 +269,19 @@ export const ShareModal: React.FC<ShareModalProps> = ({ fileId, onClose }) => {
     }
   };
 
+  const handleRevokeShare = async (shareId: string) => {
+    try {
+      await revokeShare(shareId);
+      toast.success('Access revoked successfully.');
+    } catch (error: any) {
+      toast.error('Failed to revoke share: ' + error.message);
+    }
+  };
+
   const canShare = (recipientAddress || recipientEmail) && hasRSAKeys && isPublicKeyRegistered && hasStoredKey;
+
+  const currentShares = outgoingShares.filter((s: any) => s.file_id === fileId || s.file === fileId);
+
 
   const footer = (
     <>
@@ -382,6 +400,21 @@ export const ShareModal: React.FC<ShareModalProps> = ({ fileId, onClose }) => {
           </button>
         </div>
 
+        <div className="space-y-3">
+          <label className="text-sm font-medium text-white flex items-center gap-2">
+            <Shield className="w-4 h-4 text-primary-400" />
+            Access Level
+          </label>
+          <select
+            value={selectedRole}
+            onChange={(e) => setSelectedRole(e.target.value as 'VIEWER' | 'EDITOR')}
+            className="w-full bg-slate-900/80 border-primary-500/30 text-white rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all"
+          >
+            <option value="VIEWER">Viewer - Read Only</option>
+            <option value="EDITOR">Editor - Allows Redactions</option>
+          </select>
+        </div>
+
         {/* Recipient Input */}
         <div className="space-y-3">
           {useEmail ? (
@@ -436,6 +469,48 @@ export const ShareModal: React.FC<ShareModalProps> = ({ fileId, onClose }) => {
           <p className="text-green-400 mt-2">✓ The server never sees the plaintext encryption key</p>
         </div>
       </div>
+
+      {/* Shared With List */}
+      <div className="space-y-3">
+        <label className="text-sm font-medium text-white flex items-center gap-2">
+          <User className="w-4 h-4 text-primary-400" />
+          Currently Shared With
+        </label>
+        {currentShares.length > 0 ? (
+          <div className="space-y-2 max-h-[150px] overflow-y-auto pr-2 custom-scrollbar">
+            {currentShares.map((share: any) => (
+              <div key={share.share_id || share.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 bg-slate-900/50 rounded-lg border border-slate-700/50">
+                <div className="flex flex-col min-w-0">
+                  <span className="text-sm text-slate-200 font-medium truncate" title={share.recipient || share.shared_with}>
+                    {share.recipient || share.shared_with}
+                  </span>
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className="text-[10px] text-primary-400 bg-primary-500/10 px-2 py-0.5 rounded-full uppercase tracking-wider font-semibold">
+                      {share.role || 'VIEWER'}
+                    </span>
+                    <span className="text-xs text-slate-500">
+                      {new Date(share.created_at || share.shared_at).toLocaleDateString()}
+                    </span>
+                  </div>
+                </div>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => handleRevokeShare(share.share_id || share.id)}
+                  className="shrink-0 h-8 px-3 text-xs"
+                >
+                  Revoke
+                </Button>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm text-slate-500 italic bg-slate-900/30 p-4 rounded-lg text-center border border-slate-800/50">
+            This file has not been shared with anyone yet.
+          </p>
+        )}
+      </div>
+
     </LegalModalFrame>
   );
 };

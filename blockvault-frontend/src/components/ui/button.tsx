@@ -16,9 +16,9 @@ const buttonVariants = cva(
         ghost: "hover:bg-accent hover:text-accent-foreground",
         link: "text-accent-blue underline-offset-4 hover:underline",
         // New black/white variants
-        "modal-primary": "bg-white text-black hover:bg-white/90 hover:shadow-[0_0_20px_hsl(var(--accent-blue-glow))]",
-        "modal-secondary": "bg-white/10 text-white border border-white/20 hover:bg-white/20 hover:border-accent-blue/50",
-        "modal-ghost": "text-white hover:bg-white/10",
+        "modal-primary": "bg-primary text-primary-foreground hover:bg-primary/90 hover:shadow-[0_0_20px_hsl(var(--accent-blue-glow))]",
+        "modal-secondary": "bg-secondary text-secondary-foreground border border-border hover:bg-secondary/80 hover:border-accent-blue/50",
+        "modal-ghost": "hover:bg-accent hover:text-accent-foreground",
         "modal-danger": "bg-red-600 text-white hover:bg-red-700 hover:shadow-[0_0_15px_rgba(239,68,68,0.5)]",
       },
       size: {

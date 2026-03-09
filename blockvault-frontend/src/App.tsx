@@ -7,6 +7,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { Toaster as HotToaster } from "react-hot-toast";
 import { MainLayout } from "./components/layout/MainLayout";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import { useGlobalShortcuts } from "./utils/keyboardShortcuts";
 
 // Lazy load pages for code splitting
 const IndexPage = lazy(() => import("./pages/IndexPage"));
@@ -21,6 +22,11 @@ const BlockchainPage = lazy(() => import("./pages/BlockchainPage"));
 const SettingsPage = lazy(() => import("./pages/SettingsPage"));
 const NotFoundPage = lazy(() => import("./pages/NotFoundPage"));
 const RedactPage = lazy(() => import("./pages/RedactPage"));
+const RecoverFilePage = lazy(() => import("./pages/RecoverFile"));
+const AdminUsersPage = lazy(() => import("./pages/admin/AdminUsers"));
+const AdminAuditPage = lazy(() => import("./pages/admin/AdminAudit"));
+const OrganizationsPage = lazy(() => import("./pages/Organizations"));
+const WorkspaceDashboardPage = lazy(() => import("./pages/WorkspaceDashboard"));
 
 // Import BlockVault contexts
 import { AuthProvider } from "@/contexts/AuthContext";
@@ -58,44 +64,47 @@ const queryClient = new QueryClient({
   },
 });
 
-const App = () => (
+const App = () => {
+  useGlobalShortcuts();
+  
+  return (
   <ErrorBoundary>
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
         <LoadingProvider>
           <GlobalLoader />
           <AxiosLoadingInterceptor />
-          <AuthProvider>
-            <FileProvider>
-              <RBACProvider>
-                <CaseProvider>
-                  <TooltipProvider>
-                    <Toaster />
-                    <Sonner />
-                    <HotToaster
-                      position="top-right"
-                      toastOptions={{
-                        duration: 4000,
-                        style: {
-                          background: '#0a0a0a',
-                          color: '#ffffff',
-                          border: '1px solid #1f6feb',
-                        },
-                        success: {
-                          iconTheme: {
-                            primary: '#22C55E',
-                            secondary: '#ffffff',
+          <BrowserRouter future={{ v7_relativeSplatPath: true }}>
+            <AuthProvider>
+              <FileProvider>
+                <RBACProvider>
+                  <CaseProvider>
+                    <TooltipProvider>
+                      <Toaster />
+                      <Sonner />
+                      <HotToaster
+                        position="top-right"
+                        toastOptions={{
+                          duration: 4000,
+                          style: {
+                            background: '#0a0a0a',
+                            color: '#ffffff',
+                            border: '1px solid #1f6feb',
                           },
-                        },
-                        error: {
-                          iconTheme: {
-                            primary: '#EF4444',
-                            secondary: '#ffffff',
+                          success: {
+                            iconTheme: {
+                              primary: '#22C55E',
+                              secondary: '#ffffff',
+                            },
                           },
-                        },
-                      }}
-                    />
-                    <BrowserRouter future={{ v7_relativeSplatPath: true }}>
+                          error: {
+                            iconTheme: {
+                              primary: '#EF4444',
+                              secondary: '#ffffff',
+                            },
+                          },
+                        }}
+                      />
                       <RouteProgress />
                       <Suspense fallback={<PageLoader />}>
                         <Routes>
@@ -158,19 +167,60 @@ const App = () => (
                               </ProtectedRoute>
                             }
                           />
+                          <Route
+                            path="/recover-file"
+                            element={
+                              <ProtectedRoute>
+                                <MainLayout><RecoverFilePage /></MainLayout>
+                              </ProtectedRoute>
+                            }
+                          />
+                          <Route
+                            path="/admin/users"
+                            element={
+                              <ProtectedRoute>
+                                <MainLayout><AdminUsersPage /></MainLayout>
+                              </ProtectedRoute>
+                            }
+                          />
+                          <Route
+                            path="/admin/audit"
+                            element={
+                              <ProtectedRoute>
+                                <MainLayout><AdminAuditPage /></MainLayout>
+                              </ProtectedRoute>
+                            }
+                          />
+                          <Route
+                            path="/orgs"
+                            element={
+                              <ProtectedRoute>
+                                <MainLayout><OrganizationsPage /></MainLayout>
+                              </ProtectedRoute>
+                            }
+                          />
+                          <Route
+                            path="/workspaces/:id"
+                            element={
+                              <ProtectedRoute>
+                                <MainLayout><WorkspaceDashboardPage /></MainLayout>
+                              </ProtectedRoute>
+                            }
+                          />
                           <Route path="*" element={<NotFoundPage />} />
                         </Routes>
                       </Suspense>
-                    </BrowserRouter>
-                  </TooltipProvider>
-                </CaseProvider>
-              </RBACProvider>
-            </FileProvider>
-          </AuthProvider>
+                    </TooltipProvider>
+                  </CaseProvider>
+                </RBACProvider>
+              </FileProvider>
+            </AuthProvider>
+          </BrowserRouter>
         </LoadingProvider>
       </ThemeProvider>
     </QueryClientProvider>
   </ErrorBoundary>
-);
+  );
+};
 
 export default App;

@@ -20,8 +20,8 @@ interface LegalModalFrameProps {
 
 const iconAccentMap: Record<NonNullable<LegalModalFrameProps['headerAccent']>, string> = {
   blue: 'bg-accent-blue/10 text-accent-blue border-accent-blue/30 shadow-[0_0_15px_hsl(var(--accent-blue-glow))]',
-  green: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30 shadow-[0_0_15px_rgba(52,211,153,0.4)]',
-  violet: 'bg-violet-500/10 text-violet-400 border-violet-500/30 shadow-[0_0_15px_rgba(139,92,246,0.4)]',
+  green: 'bg-emerald-500/10 text-emerald-500 border-emerald-500/30 shadow-[0_0_15px_rgba(52,211,153,0.3)]',
+  violet: 'bg-violet-500/10 text-violet-500 border-violet-500/30 shadow-[0_0_15px_rgba(139,92,246,0.3)]',
 };
 
 export function LegalModalFrame({
@@ -46,7 +46,7 @@ export function LegalModalFrame({
     >
       <div
         className={cn(
-          `legal-modal flex w-full ${widthClassName} max-h-[88vh] flex-col overflow-hidden rounded-2xl border border-white/10 bg-black shadow-2xl`,
+          `legal-modal flex w-full ${widthClassName} max-h-[88vh] flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl`,
           'animate-in fade-in-0 zoom-in-95 duration-200',
           className,
         )}
@@ -62,15 +62,15 @@ export function LegalModalFrame({
               {icon}
             </div>
             <div>
-              <h2 className="text-xl font-semibold tracking-tight text-white">{title}</h2>
-              {subtitle && <p className="text-sm text-white/60">{subtitle}</p>}
+              <h2 className="text-xl font-semibold tracking-tight text-foreground">{title}</h2>
+              {subtitle && <p className="text-sm text-muted-foreground">{subtitle}</p>}
             </div>
           </div>
           <Button
             onClick={onClose}
             variant="modal-ghost"
             size="icon"
-            className="text-white/60 hover:text-white"
+            className="text-muted-foreground hover:text-foreground"
           >
             <X className="h-5 w-5" />
           </Button>

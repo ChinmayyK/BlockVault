@@ -72,7 +72,12 @@ def _check_passphrase_strength(passphrase: str) -> None:
 
 
 def _decrypt_file_bytes(rec: Dict[str, Any], key: str) -> bytes:
-    """Fetch encrypted blob from S3 and decrypt with the crypto daemon."""
+    """Fetch encrypted blob from S3 and decrypt it.
+    
+    If the file record has wrapped keys (v2), try to unwrap the file_key using
+    the provided key as a passphrase, then a recovery key, then a wallet key.
+    If no wrapped keys exist, fallback to the legacy v1 crypto daemon decryption.
+    """
     import logging as _logging
     _log = _logging.getLogger("blockvault")
     try:
@@ -83,16 +88,70 @@ def _decrypt_file_bytes(rec: Dict[str, Any], key: str) -> bytes:
     except Exception as exc:
         abort(502, f"failed to download encrypted blob: {exc}")
 
-    try:
-        result = crypto_decrypt(encrypted_bytes, key, rec.get("aad"))
-        _log.info("_decrypt_file_bytes: crypto decrypt OK (%d bytes)", len(result))
-        return result
-    except CryptoDaemonError as exc:
-        _log.error("_decrypt_file_bytes: CryptoDaemonError: %s", exc)
-        abort(503, "crypto service unavailable")
-    except Exception as exc:
-        _log.error("_decrypt_file_bytes: decrypt exception: %s: %s", type(exc).__name__, exc)
-        abort(400, f"decryption failed (bad key or corrupted data): {type(exc).__name__}")
+    if "wrapped_keys" in rec:
+        # v2 Key Wrapping flow
+        from ..core.key_recovery import (
+            unwrap_file_key_with_passphrase,
+            unwrap_file_key_with_recovery_key,
+            unwrap_file_key_with_wallet,
+            decrypt_with_aes_gcm
+        )
+        
+        wrapped_keys = rec["wrapped_keys"]
+        metadata = rec.get("wrapped_key_metadata", {})
+        file_key = None
+        
+        # 1. Try Passphrase
+        if not file_key and "passphrase" in wrapped_keys and "argon2_salt" in metadata:
+            try:
+                file_key = unwrap_file_key_with_passphrase(
+                    wrapped_keys["passphrase"], key, metadata["argon2_salt"]
+                )
+            except ValueError:
+                pass
+                
+        # 2. Try Recovery Key (looks like ZXA9-...)
+        if not file_key and "recovery" in wrapped_keys and "recovery_salt" in metadata:
+            try:
+                file_key = unwrap_file_key_with_recovery_key(
+                    wrapped_keys["recovery"], key, metadata["recovery_salt"]
+                )
+            except ValueError:
+                pass
+                
+        # 3. Try Wallet ECIES (assuming key is the raw hex eth private key)
+        if not file_key and "wallet" in wrapped_keys:
+            try:
+                file_key = unwrap_file_key_with_wallet(
+                    wrapped_keys["wallet"], key
+                )
+            except ValueError:
+                pass
+                
+        if not file_key:
+            abort(400, "decryption failed (bad key/passphrase/recovery key)")
+            
+        try:
+            aad = rec.get("aad") or ""
+            result = decrypt_with_aes_gcm(file_key, encrypted_bytes, aad.encode("utf-8"))
+            _log.info("_decrypt_file_bytes: AES-GCM decrypt OK (%d bytes)", len(result))
+            return result
+        except Exception as exc:
+            _log.error("_decrypt_file_bytes: AES-GCM decrypt exception: %s", exc)
+            abort(400, f"decryption failed (corrupted data): {type(exc).__name__}")
+            
+    else:
+        # v1 Legacy Flow
+        try:
+            result = crypto_decrypt(encrypted_bytes, key, rec.get("aad"))
+            _log.info("_decrypt_file_bytes: legacy crypto decrypt OK (%d bytes)", len(result))
+            return result
+        except CryptoDaemonError as exc:
+            _log.error("_decrypt_file_bytes: CryptoDaemonError: %s", exc)
+            abort(503, "crypto service unavailable")
+        except Exception as exc:
+            _log.error("_decrypt_file_bytes: decrypt exception: %s: %s", type(exc).__name__, exc)
+            abort(400, f"decryption failed (bad key or corrupted data): {type(exc).__name__}")
 
 
 def _files_collection():
@@ -301,13 +360,41 @@ def upload_file():  # type: ignore
             current_app.logger.warning(f"⚠️ Failed to encrypt key for owner: {e}")
             # Non-fatal: continue without stored key (legacy behavior)
     
-    enc_filename = generate_encrypted_filename()
+    # v2 Key Wrapping flow
+    from ..core.key_recovery import (
+        generate_file_key,
+        encrypt_with_aes_gcm,
+        generate_recovery_key,
+        wrap_file_key_with_passphrase,
+        wrap_file_key_with_recovery_key,
+        wrap_file_key_with_wallet
+    )
 
-    # Encrypt in-memory via the crypto daemon, then push to S3.
-    try:
-        encrypted_bytes = crypto_encrypt(data, key, aad)
-    except CryptoDaemonError:
-        abort(503, "crypto service unavailable")
+    file_key = generate_file_key()
+    
+    # Encrypt the actual file in-memory using the new AES GCM flow instead
+    # of hitting the rust backend daemon (since we now have the random key in Python)
+    aad_bytes = (aad or "").encode("utf-8")
+    encrypted_bytes = encrypt_with_aes_gcm(file_key, data, aad_bytes)
+    
+    # Generate Recovery Key for the user
+    recovery_key = generate_recovery_key()
+
+    # Wrap 1: Passphrase
+    argon2_salt, passphrase_wrapped = wrap_file_key_with_passphrase(file_key, key)
+    
+    # Wrap 2: Recovery Key
+    recovery_salt, recovery_wrapped = wrap_file_key_with_recovery_key(file_key, recovery_key)
+    
+    # Wrap 3: Wallet (if public key exists in DB)
+    wallet_wrapped = None
+    if owner_doc and owner_doc.get("sharing_pubkey"):
+        try:
+            wallet_wrapped = wrap_file_key_with_wallet(file_key, owner_doc["sharing_pubkey"])
+        except Exception as e:
+            current_app.logger.warning(f"⚠️ Failed to wrap using wallet pubkey: {e}")
+
+    enc_filename = generate_encrypted_filename()
 
     # Upload encrypted blob to S3
     try:
@@ -333,8 +420,23 @@ def upload_file():  # type: ignore
         "ipfs_status": "pending",
         "anchor_status": "pending",
         "folder": folder,
-        "owner_encrypted_key": owner_encrypted_key,  # Encrypted with owner's public key
+        # Legacy support (will be None but kept for backward compat)
+        "owner_encrypted_key": owner_encrypted_key,
+        
+        # New key wrapping architecture
+        "wrapped_keys": {
+            "passphrase": passphrase_wrapped,
+            "recovery": recovery_wrapped,
+        },
+        "wrapped_key_metadata": {
+            "argon2_salt": argon2_salt,
+            "recovery_salt": recovery_salt,
+        }
     }
+    
+    if wallet_wrapped:
+        record["wrapped_keys"]["wallet"] = wallet_wrapped
+
     ins = _files_collection().insert_one(record)
     file_id_str = str(ins.inserted_id)
 
@@ -357,6 +459,8 @@ def upload_file():  # type: ignore
         "ipfs_status": "pending",
         "anchor_status": "pending",
         "has_stored_key": owner_encrypted_key is not None,
+        # Only return the recovery key ONCE during upload
+        "recovery_key": recovery_key,
     }
 
 
@@ -726,7 +830,48 @@ def verify_file(file_id: str):  # type: ignore
         "merkle_valid": merkle_valid,
     }
     log_event("verify", target_id=file_id, details={"merkle_valid": merkle_valid})
+    log_event("verify", target_id=file_id, details={"merkle_valid": merkle_valid})
     return result
+
+
+def _calculate_risk_score(entities: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Calculate a risk score based on detected PII entities."""
+    counts: Dict[str, int] = {}
+    for ent in entities:
+        etype = ent.get("entity_type", "UNKNOWN")
+        counts[etype] = counts.get(etype, 0) + 1
+        
+    total_entities = sum(counts.values())
+    
+    # Assess severity
+    # High risk categories
+    high_risk_types = {"CREDIT_CARD", "US_SSN", "IBAN_CODE", "CRYPTO", "IP_ADDRESS", "PASSPORT", "AADHAAR", "PAN_CARD"}
+    medium_risk_types = {"EMAIL_ADDRESS", "PHONE_NUMBER", "PERSON", "NRP", "LOCATION", "ORG", "COMPANY", "DATE_TIME"}
+    
+    high_hits = sum(count for etype, count in counts.items() if etype in high_risk_types)
+    med_hits = sum(count for etype, count in counts.items() if etype in medium_risk_types)
+    
+    risk_level = "Low"
+    insights = []
+    
+    if high_hits > 0 or total_entities >= 20:
+        risk_level = "Critical" if high_hits > 2 else "High"
+        insights.append(f"Detected {high_hits} high-risk entities (e.g. financial, national IDs).")
+    elif med_hits > 5:
+        risk_level = "Medium"
+        insights.append(f"Detected {med_hits} medium-risk tracking entities (e.g. persons, locations, emails).")
+        
+    if counts.get("PERSON", 0) > 0 and (counts.get("EMAIL_ADDRESS", 0) > 0 or counts.get("PHONE_NUMBER", 0) > 0):
+        insights.append("Potential personally identifiable contact information detected.")
+        
+    if total_entities == 0:
+        insights.append("No common sensitive data explicitly detected.")
+        
+    return {
+        "risk_level": risk_level,
+        "entities": counts,
+        "insights": insights
+    }
 
 
 @bp.post("/<file_id>/analyze-redaction", strict_slashes=False)
@@ -752,6 +897,7 @@ def analyze_redaction(file_id: str):  # type: ignore
 
     # --- Strategy 1: try external redactor microservice ---
     redactor_url = current_app.config.get("REDACTOR_SERVICE_URL")
+    entities = []
     if redactor_url:
         try:
             resp = requests.post(
@@ -761,26 +907,37 @@ def analyze_redaction(file_id: str):  # type: ignore
             )
             resp.raise_for_status()
             current_app.logger.info("analyze-redaction: used external redactor service")
-            return resp.json()
+            entities = resp.json().get("entities", [])
         except requests.RequestException as exc:
             current_app.logger.warning(
                 "External redactor unavailable (%s), falling back to inline detector", exc
             )
 
     # --- Strategy 2: inline detection (always available) ---
-    try:
-        from ..core.inline_redactor import analyze_pdf_bytes
-        entities = analyze_pdf_bytes(decrypted_bytes)
-        current_app.logger.info(
-            "analyze-redaction: inline detector found %d entities", len(entities)
-        )
-        return {"entities": entities}
-    except ImportError as exc:
-        current_app.logger.error("Inline redactor import failed: %s", exc)
-        abort(503, "redaction analysis unavailable (install PyMuPDF)")
-    except Exception as exc:
-        current_app.logger.error("Inline analysis failed: %s", exc, exc_info=True)
-        abort(500, f"analysis failed: {exc}")
+    if not entities:
+        try:
+            from ..core.inline_redactor import analyze_pdf_bytes
+            entities = analyze_pdf_bytes(decrypted_bytes)
+            current_app.logger.info(
+                "analyze-redaction: inline detector found %d entities", len(entities)
+            )
+        except ImportError as exc:
+            current_app.logger.error("Inline redactor import failed: %s", exc)
+            abort(503, "redaction analysis unavailable (install PyMuPDF)")
+        except Exception as exc:
+            current_app.logger.error("Inline analysis failed: %s", exc, exc_info=True)
+            abort(500, f"analysis failed: {exc}")
+
+    # --- Global Risk Calculation ---
+    risk_report = _calculate_risk_score(entities)
+    
+    # Store the risk scan metadata
+    get_db().files.update_one(
+        {"_id": canonical_id}, 
+        {"$set": {"risk_scan": risk_report}}
+    )
+    
+    return {"entities": entities, "risk_report": risk_report}
 
 @bp.post("/<file_id>/search-redaction", strict_slashes=False)
 @require_auth
@@ -1578,3 +1735,108 @@ def zkml_summarize_document(file_id: str):  # type: ignore
 # ---------------------- On-chain File Access (off-chain index) ----------------------
 
 ## On-chain access endpoints removed
+
+# ---------------------------------------------------------------------------
+# Key Recovery Endpoints
+# ---------------------------------------------------------------------------
+
+@bp.post("/<file_id>/recover", strict_slashes=False)
+@require_auth
+def recover_file(file_id: str):  # type: ignore
+    """Verify a recovery key and return success if valid."""
+    ensure_role(Role.USER)
+    rec, canonical_id = _lookup_file(file_id)
+    owner = getattr(request, "address").lower()
+    
+    if rec.get("owner") != owner:
+        abort(404, "file not found")
+        
+    data = request.get_json(silent=True) or {}
+    recovery_key = data.get("recovery_key")
+    if not recovery_key:
+        abort(400, "recovery_key required")
+        
+    wrapped_keys = rec.get("wrapped_keys", {})
+    metadata = rec.get("wrapped_key_metadata", {})
+    
+    if "recovery" not in wrapped_keys or "recovery_salt" not in metadata:
+        abort(400, "file does not support key recovery (legacy encryption)")
+        
+    from ..core.key_recovery import unwrap_file_key_with_recovery_key
+    
+    try:
+        # Attempt to unwrap using the recovery key. 
+        # If it succeeds, the recovery key is valid. We don't need to return the file_key itself.
+        _ = unwrap_file_key_with_recovery_key(
+            wrapped_keys["recovery"], recovery_key, metadata["recovery_salt"]
+        )
+        current_app.logger.info(f"Key recovery verified for file {canonical_id}")
+        return {"success": True, "file_id": canonical_id}
+    except ValueError:
+        current_app.logger.warning(f"Invalid recovery key attempt for file {canonical_id}")
+        abort(401, "invalid recovery key")
+    except Exception as e:
+        current_app.logger.error(f"Recovery error: {e}")
+        abort(500, "internal error during recovery")
+
+
+@bp.post("/<file_id>/reset-passphrase", strict_slashes=False)
+@require_auth
+def reset_passphrase(file_id: str):  # type: ignore
+    """Reset the passphrase wrapping using a valid recovery key."""
+    ensure_role(Role.USER)
+    rec, canonical_id = _lookup_file(file_id)
+    owner = getattr(request, "address").lower()
+    
+    if rec.get("owner") != owner:
+        abort(404, "file not found")
+        
+    data = request.get_json(silent=True) or {}
+    recovery_key = data.get("recovery_key")
+    new_passphrase = data.get("new_passphrase")
+    
+    if not recovery_key or not new_passphrase:
+        abort(400, "recovery_key and new_passphrase required")
+        
+    _check_passphrase_strength(new_passphrase)
+        
+    wrapped_keys = rec.get("wrapped_keys", {})
+    metadata = rec.get("wrapped_key_metadata", {})
+    
+    if "recovery" not in wrapped_keys or "recovery_salt" not in metadata:
+        abort(400, "file does not support key recovery (legacy encryption)")
+        
+    from ..core.key_recovery import (
+        unwrap_file_key_with_recovery_key,
+        wrap_file_key_with_passphrase
+    )
+    
+    try:
+        # 1. Recover the plain file_key
+        file_key = unwrap_file_key_with_recovery_key(
+            wrapped_keys["recovery"], recovery_key, metadata["recovery_salt"]
+        )
+        
+        # 2. Wrap it with the new passphrase
+        new_salt, new_wrapped = wrap_file_key_with_passphrase(file_key, new_passphrase)
+        
+        # 3. Update the database
+        _files_collection().update_one(
+            {"_id": rec["_id"]},
+            {
+                "$set": {
+                    "wrapped_keys.passphrase": new_wrapped,
+                    "wrapped_key_metadata.argon2_salt": new_salt
+                }
+            }
+        )
+        
+        current_app.logger.info(f"Passphrase reset successful for file {canonical_id}")
+        return {"success": True, "file_id": canonical_id}
+        
+    except ValueError:
+        current_app.logger.warning(f"Invalid recovery key during reset for file {canonical_id}")
+        abort(401, "invalid recovery key")
+    except Exception as e:
+        current_app.logger.error(f"Passphrase reset error: {e}")
+        abort(500, "internal error during passphrase reset")

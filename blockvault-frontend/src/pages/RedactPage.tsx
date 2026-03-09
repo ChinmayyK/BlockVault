@@ -1,15 +1,20 @@
 import { useState, useEffect, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { toast } from "react-hot-toast";
-import { Shield, ArrowLeft, Loader2, Lock, CheckCircle2, Square, Hand, Undo, Redo, Eye, Trash, Download, FileText, Search } from "lucide-react";
+import { Shield, ArrowLeft, Loader2, Lock, CheckCircle2, Square, Hand, Undo, Redo, Eye, Trash, Download, FileText, Search, AlertCircle } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 import { useFiles } from "@/contexts/FileContext";
 import { analyzeRedaction, applyRedaction, verifyRedaction, searchRedactionMatches } from "@/api/redactor";
-import { RedactApplyResponse, RedactEntity, ManualRect, VerifyRedactionResponse, SearchMatch } from "@/types/redactor";
+import { RedactApplyResponse, RedactEntity, ManualRect, VerifyRedactionResponse, SearchMatch, RedactionGroup, RiskReport } from "@/types/redactor";
+import { buildTermIndex } from "@/utils/consistencyEngine";
 import { DocumentViewer } from "@/components/redact/DocumentViewer";
+import { ConsistencyPromptModal } from "@/components/redact/ConsistencyPromptModal";
+import { RiskScanPanel } from "@/components/redact/RiskScanPanel";
 import { DocumentSkeleton } from "@/components/skeleton/DocumentSkeleton";
 import { RedactionProgress } from "@/components/redact/RedactionProgress";
 import { EntitySidebar } from "@/components/redact/EntitySidebar";
+import { ReviewPanel } from "@/components/redact/ReviewPanel";
 import { LegalModalFrame } from "@/components/legal/modals/LegalModalFrame";
 import { getApiBase } from "@/lib/getApiBase";
 import { readStoredUser } from "@/utils/authStorage";
@@ -57,6 +62,19 @@ export default function RedactPage() {
     // Toolbar modes
     const [activeTool, setActiveTool] = useState<"select" | "draw">("select");
     const [previewMode, setPreviewMode] = useState(false);
+    // Review Mode state
+    const [reviewMode, setReviewMode] = useState(false);
+    const [currentDetectionIndex, setCurrentDetectionIndex] = useState(0);
+
+    // Consistency Engine State
+    const [entityGroups, setEntityGroups] = useState<Record<string, RedactionGroup>>({});
+    const [consistencyPromptGroup, setConsistencyPromptGroup] = useState<RedactionGroup | null>(null);
+    const [reviewGroupId, setReviewGroupId] = useState<string | null>(null);
+
+    // Risk Scanner State
+    const [riskReport, setRiskReport] = useState<RiskReport | null>(null);
+    const [showRiskPanel, setShowRiskPanel] = useState<boolean>(false);
+
     const approvedEntityCount = entities.filter((entity) => entity.approved !== false).length;
     const hasPendingRedactions = approvedEntityCount > 0 || manualBoxes.length > 0 || searchMatches.length > 0;
     const activeRedactedFileId = redactionResult?.file_id || null;
@@ -95,8 +113,15 @@ export default function RedactPage() {
         setManualHistory([[]]);
         setHistoryIndex(0);
         setIsAnalyzed(false);
+        setReviewMode(false);
+        setCurrentDetectionIndex(0);
         setSelectedBoxId(null);
         setHoveredEntityId(null);
+        setEntityGroups({});
+        setConsistencyPromptGroup(null);
+        setReviewGroupId(null);
+        setRiskReport(null);
+        setShowRiskPanel(false);
         setRedactedFileUrl((previousUrl) => {
             if (previousUrl) {
                 URL.revokeObjectURL(previousUrl);
@@ -332,8 +357,8 @@ export default function RedactPage() {
                 return String(record.redacted_from || record.source_file_id || "") === fileId;
             })
             .sort((left, right) => {
-                const leftCreated = Number((left as Record<string, unknown>).created_at || 0);
-                const rightCreated = Number((right as Record<string, unknown>).created_at || 0);
+                const leftCreated = Number((left as unknown as Record<string, unknown>).created_at || 0);
+                const rightCreated = Number((right as unknown as Record<string, unknown>).created_at || 0);
                 return rightCreated - leftCreated;
             })[0];
 
@@ -386,9 +411,18 @@ export default function RedactPage() {
             const annotated = response.entities.map((ent, idx) => ({
                 ...ent,
                 id: `auto-${idx}`,
-                approved: true,
+                approved: true, // Auto-approve initially
             }));
-            setEntities(annotated);
+            
+            const { entities: indexedEntities, groups } = buildTermIndex(annotated);
+            setEntities(indexedEntities);
+            setEntityGroups(groups);
+            
+            if (response.risk_report) {
+                setRiskReport(response.risk_report);
+                setShowRiskPanel(true);
+            }
+            
             setIsAnalyzed(true);
             toast.success(`Found ${annotated.length} potential entities.`, { id: loadingToast });
         } catch (error) {
@@ -399,9 +433,52 @@ export default function RedactPage() {
         }
     };
 
+    // Auto-analyze after document unlock
+    useEffect(() => {
+        if (documentUrl && confirmedPassphrase && !isAnalyzed && !isAnalyzing && !redactionComplete) {
+            handleAnalyze();
+        }
+    }, [documentUrl, confirmedPassphrase, isAnalyzed, isAnalyzing, redactionComplete]);
+
     // Toggle entity selection
     const handleToggleEntity = (id: string, checked: boolean) => {
-        setEntities(prev => prev.map(e => e.id === id ? { ...e, approved: checked } : e));
+        setEntities(prev => {
+            const nextEntities = prev.map(e => e.id === id ? { ...e, approved: checked } : e);
+            
+            // Trigger Consistency Prompt if a grouped item is checked
+            if (checked && !reviewMode) {
+                const toggled = prev.find(e => e.id === id);
+                if (toggled?.group_id && entityGroups[toggled.group_id]) {
+                    const unapprovedSiblings = nextEntities.filter(e => e.group_id === toggled.group_id && e.id !== id && e.approved === false);
+                    if (unapprovedSiblings.length > 0) {
+                        setTimeout(() => setConsistencyPromptGroup(entityGroups[toggled.group_id!]), 0);
+                    }
+                }
+            }
+            return nextEntities;
+        });
+    };
+
+    const handleRedactAllGroup = () => {
+        if (!consistencyPromptGroup) return;
+        const groupId = consistencyPromptGroup.id;
+        setEntities(prev => prev.map(e => e.group_id === groupId ? { ...e, approved: true } : e));
+        toast.success(`Redacted all occurrences of "${consistencyPromptGroup.term}".`);
+        setConsistencyPromptGroup(null);
+    };
+
+    const handleReviewGroupMatches = () => {
+        if (!consistencyPromptGroup) return;
+        setReviewGroupId(consistencyPromptGroup.id);
+        
+        // Find FIRST occurrence in that group to start review
+        const firstIdx = entities.findIndex(e => e.group_id === consistencyPromptGroup.id);
+        if (firstIdx !== -1) {
+             setCurrentDetectionIndex(firstIdx);
+             setReviewMode(true);
+        }
+        
+        setConsistencyPromptGroup(null);
     };
 
     const updateManualBoxesWithHistory = (newBoxes: ManualRect[]) => {
@@ -432,6 +509,60 @@ export default function RedactPage() {
         if (historyIndex < manualHistory.length - 1) {
             setHistoryIndex(i => i + 1);
             setManualBoxes(manualHistory[historyIndex + 1]);
+        }
+    };
+
+    // Review Mode Navigation Helpers
+    const handleNextDetection = () => {
+        if (reviewGroupId) {
+             const nextIdx = entities.findIndex((e, i) => i > currentDetectionIndex && e.group_id === reviewGroupId);
+             if (nextIdx !== -1) {
+                 setCurrentDetectionIndex(nextIdx);
+             } else {
+                 setReviewMode(false);
+                 setReviewGroupId(null);
+                 toast.success("Finished reviewing group occurrences.");
+             }
+        } else {
+             if (currentDetectionIndex < entities.length - 1) {
+                 setCurrentDetectionIndex(i => i + 1);
+             } else {
+                 setReviewMode(false);
+             }
+        }
+    };
+
+    const handlePrevDetection = () => {
+        if (reviewGroupId) {
+             const prevEntities = entities.slice(0, currentDetectionIndex);
+             let prevIdx = -1;
+             for (let i = prevEntities.length - 1; i >= 0; i--) {
+                 if (prevEntities[i].group_id === reviewGroupId) {
+                     prevIdx = i;
+                     break;
+                 }
+             }
+             if (prevIdx !== -1) {
+                 setCurrentDetectionIndex(prevIdx);
+             }
+        } else {
+             if (currentDetectionIndex > 0) {
+                 setCurrentDetectionIndex(i => i - 1);
+             }
+        }
+    };
+
+    const handleAcceptDetection = () => {
+        if (entities[currentDetectionIndex]) {
+            handleToggleEntity(entities[currentDetectionIndex].id!, true);
+            handleNextDetection();
+        }
+    };
+
+    const handleSkipDetection = () => {
+        if (entities[currentDetectionIndex]) {
+            handleToggleEntity(entities[currentDetectionIndex].id!, false);
+            handleNextDetection();
         }
     };
 
@@ -489,6 +620,22 @@ export default function RedactPage() {
             toast.error("Select detected entities or draw at least one redaction area first.");
             return;
         }
+
+        // Check for partial redactions in groups
+        const partialGroups = Object.keys(entityGroups).filter(groupId => {
+            const groupEntities = entities.filter(e => e.group_id === groupId);
+            const approvedCount = groupEntities.filter(e => e.approved !== false).length;
+            return approvedCount > 0 && approvedCount < groupEntities.length;
+        });
+
+        if (partialGroups.length > 0) {
+            const terms = partialGroups.map(id => `"${entityGroups[id].term}"`);
+            const confirmMsg = `Warning: You are leaving some occurrences of grouped terms unredacted (${terms.join(", ")}).\n\nAre you sure you want to proceed with partial redactions?`;
+            if (!window.confirm(confirmMsg)) {
+                return;
+            }
+        }
+
         setIsApplying(true);
         const loadingToast = toast.loading("Burnishing redactions into document...");
 
@@ -941,7 +1088,19 @@ export default function RedactPage() {
                             <Trash className="w-4 h-4" /> Clear
                         </button>
 
-                        <div className="ml-auto flex items-center">
+                        <div className="ml-auto flex items-center gap-2">
+                            {!reviewMode && isAnalyzed && entities.length > 0 && (
+                                <button
+                                    className="px-3 py-1.5 rounded flex items-center gap-2 text-sm font-medium transition-colors bg-blue-600/10 text-blue-600 hover:bg-blue-600/20"
+                                    onClick={() => {
+                                        setReviewMode(true);
+                                        setCurrentDetectionIndex(0);
+                                    }}
+                                >
+                                    Start Review
+                                </button>
+                            )}
+                            <div className="w-px h-6 bg-border mx-1" />
                             <button
                                 className={`px-3 py-1.5 rounded flex items-center gap-2 text-sm font-medium transition-colors ${previewMode ? 'bg-slate-900 text-slate-100 hover:bg-black' : 'text-muted-foreground hover:bg-muted'}`}
                                 onClick={() => setPreviewMode(!previewMode)}
@@ -977,11 +1136,21 @@ export default function RedactPage() {
                                 hoveredEntityId={hoveredEntityId}
                                 onSelectBox={setSelectedBoxId}
                                 onHoverEntity={setHoveredEntityId}
+                                reviewMode={reviewMode}
+                                currentReviewEntityId={entities[currentDetectionIndex]?.id || null}
                             />
                         )
+                    ) : isLoadingDocument || isUnlockingDocument ? (
+                        <div className="flex-1 p-8 bg-muted/5 flex flex-col pt-12">
+                            <DocumentSkeleton />
+                        </div>
                     ) : (
-                        <div className="flex-1 flex items-center justify-center bg-muted/10 text-muted-foreground p-8 text-center">
-                            Failed to decrypt or load document for viewing.
+                        <div className="flex-1 flex flex-col items-center justify-center bg-muted/5 text-muted-foreground p-8 text-center gap-4">
+                            <AlertCircle className="w-12 h-12 text-red-400/50 mb-2" />
+                            <p className="max-w-md text-sm">Failed to decrypt or load document for viewing. Ensure you have the correct passphrase.</p>
+                            <Button variant="outline" onClick={() => navigate('/files')} className="mt-2">
+                                <ArrowLeft className="w-4 h-4 mr-2" /> Return to Files
+                            </Button>
                         </div>
                     )}
                 </div>
@@ -1027,17 +1196,41 @@ export default function RedactPage() {
                     <div className="min-h-0 flex-1 flex flex-col">
                         {isAnalyzed ? (
                             <div className="animate-in slide-in-from-right-8 duration-300 flex-1 min-h-0 flex flex-col h-full w-full">
-                                <EntitySidebar
-                                    redactionComplete={redactionComplete}
-                                    entities={entities}
-                                    manualBoxes={manualBoxes}
-                                    onToggleEntity={handleToggleEntity}
-                                    onDeleteManualEntity={handleDeleteManualEntity}
-                                    onApplyRedaction={handleApplyRedaction}
-                                    isApplying={isApplying}
-                                    hoveredEntityId={hoveredEntityId}
-                                    onHoverEntity={setHoveredEntityId}
-                                />
+                                {reviewMode ? (
+                                    <ReviewPanel
+                                        entities={entities}
+                                        currentIndex={currentDetectionIndex}
+                                        onAccept={handleAcceptDetection}
+                                        onSkip={handleSkipDetection}
+                                        onPrevious={handlePrevDetection}
+                                        onNext={handleNextDetection}
+                                        onEdit={() => {
+                                            setActiveTool("select");
+                                            setSelectedBoxId(entities[currentDetectionIndex]?.id!);
+                                        }}
+                                        onFinish={() => setReviewMode(false)}
+                                        onDelete={
+                                            entities[currentDetectionIndex]?.entity_type === "MANUAL"
+                                                ? () => {
+                                                    handleDeleteManualEntity(entities[currentDetectionIndex].id!);
+                                                    if (currentDetectionIndex > 0) handlePrevDetection();
+                                                }
+                                                : undefined
+                                        }
+                                    />
+                                ) : (
+                                    <EntitySidebar
+                                        redactionComplete={redactionComplete}
+                                        entities={entities}
+                                        manualBoxes={manualBoxes}
+                                        onToggleEntity={handleToggleEntity}
+                                        onDeleteManualEntity={handleDeleteManualEntity}
+                                        onApplyRedaction={handleApplyRedaction}
+                                        isApplying={isApplying}
+                                        hoveredEntityId={hoveredEntityId}
+                                        onHoverEntity={setHoveredEntityId}
+                                    />
+                                )}
                             </div>
                         ) : (
                             <div className="flex flex-col h-full bg-card">
@@ -1156,8 +1349,14 @@ export default function RedactPage() {
                 >
                     <div className="space-y-3">
                         <p className="text-sm text-slate-300">
-                            Enter the passphrase that was used to encrypt this file. This ensures only authorized parties can decrypt the content locally.
+                            The document must be unlocked with the symmetric encryption key (passphrase) provided by the owner before redaction can begin.
                         </p>
+                        <div className="bg-blue-500/10 border border-blue-500/20 rounded-md p-3">
+                            <h4 className="text-xs font-semibold text-blue-400 mb-1 tracking-wider uppercase">Zero Knowledge Guarantee</h4>
+                            <p className="text-[11px] text-blue-300">
+                                Passphrases are never transmitted to our servers. All document decryption runs locally inside your browser's memory.
+                            </p>
+                        </div>
                         <div className="relative">
                             <input
                                 type="password"
@@ -1179,6 +1378,15 @@ export default function RedactPage() {
                         </p>
                     </div>
                 </LegalModalFrame>
+            )}
+
+            {consistencyPromptGroup && (
+                <ConsistencyPromptModal
+                    group={consistencyPromptGroup}
+                    onRedactAll={handleRedactAllGroup}
+                    onReviewMatches={handleReviewGroupMatches}
+                    onIgnore={() => setConsistencyPromptGroup(null)}
+                />
             )}
         </div>
     );

@@ -93,7 +93,7 @@ interface FileContextType {
   loadingMoreOutgoingShares: boolean;
   loading: boolean;
   error: string | null;
-  uploadFile: (file: any, passphrase: string, aad?: string, folder?: string) => Promise<void>;
+  uploadFile: (file: any, passphrase: string, aad?: string, folder?: string) => Promise<any>;
   downloadFile: (fileId: string, passphrase: string, isSharedFile?: boolean, encryptedKey?: string, fileName?: string) => Promise<void>;
   deleteFile: (fileId: string) => Promise<void>;
   shareFile: (fileId: string, recipientAddress: string, passphrase: string, isEmail?: boolean) => Promise<void>;
@@ -389,7 +389,7 @@ export const FileProvider: React.FC<FileProviderProps> = ({ children }) => {
   });
 
   const uploadFile = useCallback(async (file: any, passphrase: string, aad?: string, folder?: string) => {
-    await uploadFileMutation.mutateAsync({ file, passphrase, aad, folder });
+    return await uploadFileMutation.mutateAsync({ file, passphrase, aad, folder });
   }, [uploadFileMutation]);
 
   const downloadFile = useCallback(async (fileId: string, passphrase: string, isSharedFile: boolean = false, encryptedKey?: string, fileName?: string) => {

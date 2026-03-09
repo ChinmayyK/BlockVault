@@ -3,6 +3,7 @@ import { Wallet, ArrowRight, Shield, Brain, Lock, Share2, FileCheck } from 'luci
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import toast from 'react-hot-toast';
+import { isUserRejection } from '@/utils/walletErrors';
 
 interface WalletConnectionProps {
   onConnect: (address: string) => void;
@@ -32,8 +33,8 @@ export const WalletConnection: React.FC<WalletConnectionProps> = ({ onConnect })
       }
     } catch (error: any) {
       console.error('Error connecting wallet:', error);
-      if (error.code === 4001) {
-        toast.error('Please connect your wallet to continue.');
+      if (isUserRejection(error)) {
+        toast.error('Connection cancelled');
       } else {
         toast.error('Failed to connect wallet. Please try again.');
       }

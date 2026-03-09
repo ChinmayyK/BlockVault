@@ -1,4 +1,5 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
+import { useDropzone } from 'react-dropzone';
 import { Upload, X, File, Link2, Lock, Folder, CheckCircle, AlertCircle } from 'lucide-react';
 import { useFiles } from '@/contexts/FileContext';
 import { Button } from '@/components/ui/button';
@@ -7,6 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
 import { GlowingSeparator } from '@/components/ui/glowing-separator';
 import { validatePassphrase } from '@/utils/passphrase';
+import { RecoveryKeyModal } from '../security/RecoveryKeyModal';
 
 interface FileUploadProps {
   onClose: () => void;
@@ -18,29 +20,14 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onClose }) => {
   const [passphrase, setPassphrase] = useState('');
   const [folder, setFolder] = useState('');
   const [fileUrl, setFileUrl] = useState('');
-  const [dragActive, setDragActive] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadStatus, setUploadStatus] = useState<'idle' | 'uploading' | 'success' | 'error'>('idle');
   const [errorMessage, setErrorMessage] = useState('');
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [recoveryKey, setRecoveryKey] = useState<string | null>(null);
 
-  const handleDrag = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (e.type === 'dragenter' || e.type === 'dragover') {
-      setDragActive(true);
-    } else if (e.type === 'dragleave') {
-      setDragActive(false);
-    }
-  }, []);
-
-  const handleDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setDragActive(false);
-    
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      const droppedFile = e.dataTransfer.files[0];
+  const onDrop = useCallback((acceptedFiles: File[]) => {
+    if (acceptedFiles && acceptedFiles.length > 0) {
+      const droppedFile = acceptedFiles[0];
       if (droppedFile.size > 100 * 1024 * 1024) {
         setErrorMessage('File size must be less than 100MB');
         return;
@@ -50,17 +37,11 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onClose }) => {
     }
   }, []);
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      const selectedFile = e.target.files[0];
-      if (selectedFile.size > 100 * 1024 * 1024) {
-        setErrorMessage('File size must be less than 100MB');
-        return;
-      }
-      setFile(selectedFile);
-      setErrorMessage('');
-    }
-  };
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+    onDrop,
+    maxFiles: 1,
+    maxSize: 100 * 1024 * 1024,
+  });
 
   const handleUpload = async () => {
     if (!file || !passphrase) {
@@ -87,15 +68,19 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onClose }) => {
         });
       }, 200);
 
-      await uploadFile(file as any, passphrase, undefined, folder || undefined);
+      const response = await uploadFile(file as any, passphrase, undefined, folder || undefined);
       
       clearInterval(progressInterval);
       setUploadProgress(100);
       setUploadStatus('success');
       
-      setTimeout(() => {
-        onClose();
-      }, 1500);
+      if (response && response.recovery_key) {
+        setRecoveryKey(response.recovery_key);
+      } else {
+        setTimeout(() => {
+          onClose();
+        }, 1500);
+      }
     } catch (error: any) {
       setUploadStatus('error');
       setErrorMessage(error.message || 'Upload failed');
@@ -123,27 +108,27 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onClose }) => {
 
   return (
     <div 
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/90 backdrop-blur-sm"
       onClick={onClose}
     >
       <div 
-        className="relative w-full max-w-2xl bg-black border border-white/10 shadow-2xl rounded-2xl animate-in fade-in-0 zoom-in-95 duration-200"
+        className="relative w-full max-w-2xl bg-card border border-border shadow-2xl rounded-2xl animate-in fade-in-0 zoom-in-95 duration-200"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="p-8">
           {/* Header */}
           <div className="flex items-start justify-between mb-6">
             <div>
-              <h2 className="text-2xl font-semibold mb-2 text-white">
+              <h2 className="text-2xl font-semibold mb-2 text-foreground">
                 Upload Secure File
               </h2>
-              <p className="text-sm text-white/60">
+              <p className="text-sm text-muted-foreground">
                 Upload your file with end-to-end encryption and blockchain verification
               </p>
             </div>
             <button
               onClick={onClose}
-              className="p-2 rounded-full hover:bg-white/10 transition-colors text-white/60 hover:text-white"
+              className="p-2 rounded-full hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
               aria-label="Close"
             >
               <X className="h-5 w-5" />
@@ -168,40 +153,27 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onClose }) => {
 
           {/* Drag & Drop Area */}
           <div
+            {...(file ? {} : getRootProps())}
             className={`relative border-2 border-dashed rounded-lg p-12 text-center transition-all ${
-              dragActive 
-                ? 'border-accent-blue bg-accent-blue/10 shadow-[0_0_28px_hsl(var(--accent-blue-glow))]' 
+              isDragActive 
+                ? 'border-primary bg-primary/10 shadow-[0_0_28px_hsl(var(--primary))]' 
                 : file 
-                ? 'border-white/50 bg-white/5'
-                : 'border-white/20 hover:border-accent-blue/60 hover:bg-accent-blue/5'
+                ? 'border-border bg-muted/30 cursor-default'
+                : 'border-border hover:border-primary/60 hover:bg-muted/50 cursor-pointer'
             }`}
-            onDragEnter={handleDrag}
-            onDragLeave={handleDrag}
-            onDragOver={handleDrag}
-            onDrop={handleDrop}
-            onClick={() => !file && fileInputRef.current?.click()}
           >
+            {!file && <input {...getInputProps()} />}
             {!file ? (
               <>
                 <div className="flex flex-col items-center gap-4">
-                  <div className="w-16 h-16 rounded-full bg-white/10 border border-white/20 flex items-center justify-center shadow-[0_0_24px_hsl(var(--accent-blue-glow))]">
-                    <Upload className="h-8 w-8 text-white" />
+                  <div className={`w-16 h-16 rounded-full flex items-center justify-center transition-all ${isDragActive ? 'bg-primary border-primary shadow-[0_0_24px_hsl(var(--primary))]' : 'bg-muted border border-border'}`}>
+                    <Upload className={`h-8 w-8 ${isDragActive ? 'text-primary-foreground' : 'text-foreground'}`} />
                   </div>
                   <div>
                     <p className="text-lg font-medium mb-1 text-white">
-                      Drag & Drop or{' '}
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          fileInputRef.current?.click();
-                        }}
-                        className="text-accent-blue hover:underline"
-                      >
-                        Choose file
-                      </button>
-                      {' '}to upload
+                      {isDragActive ? 'Drop file here...' : 'Drag & Drop or click to upload'}
                     </p>
-                    <p className="text-sm text-white/60">
+                    <p className="text-sm text-muted-foreground">
                       PDF, DOCX, Images, Videos • Max 100MB
                     </p>
                   </div>
@@ -211,8 +183,8 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onClose }) => {
               <div className="flex items-center gap-4">
                 <div className="text-4xl flex-shrink-0">{getFileIcon(file.name)}</div>
                 <div className="flex-1 min-w-0 text-left">
-                  <p className="font-medium truncate text-white" title={file.name}>{file.name}</p>
-                  <p className="text-sm text-white/60">{formatFileSize(file.size)}</p>
+                  <p className="font-medium truncate text-foreground" title={file.name}>{file.name}</p>
+                  <p className="text-sm text-muted-foreground">{formatFileSize(file.size)}</p>
                   {uploadStatus === 'uploading' && (
                     <Progress value={uploadProgress} className="mt-2 h-2" />
                   )}
@@ -225,7 +197,7 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onClose }) => {
                       setUploadProgress(0);
                       setUploadStatus('idle');
                     }}
-                    className="p-1 rounded-full hover:bg-white/10 transition-colors flex-shrink-0 text-white/60 hover:text-white"
+                    className="p-1 rounded-full hover:bg-destructive/10 hover:text-destructive transition-colors flex-shrink-0 text-muted-foreground"
                   >
                     <X className="h-5 w-5" />
                   </button>
@@ -234,17 +206,10 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onClose }) => {
             )}
           </div>
 
-          <input
-            ref={fileInputRef}
-            type="file"
-            onChange={handleFileSelect}
-            className="hidden"
-          />
-
           {/* OR Separator */}
           <div className="flex items-center gap-4 my-6">
             <div className="flex-1"><GlowingSeparator /></div>
-            <span className="text-sm text-white/60">or</span>
+            <span className="text-sm text-muted-foreground">or</span>
             <div className="flex-1"><GlowingSeparator /></div>
           </div>
 
@@ -260,23 +225,23 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onClose }) => {
                 placeholder="Add file URL here"
                 value={fileUrl}
                 onChange={(e) => setFileUrl(e.target.value)}
-                className="pr-10 bg-white/5 border-white/20 text-white placeholder:text-white/40"
+                className="pr-10 bg-muted border-border text-foreground placeholder:text-muted-foreground/40"
               />
-              <Link2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-white/40" />
+              <Link2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/40" />
             </div>
           </div>
 
           {/* Encryption Settings */}
           {file && uploadStatus !== 'success' && (
-            <div className="space-y-4 mb-6 p-4 rounded-lg bg-white/5 border border-white/10">
-              <h3 className="text-sm font-semibold flex items-center gap-2 text-white">
+            <div className="space-y-4 mb-6 p-4 rounded-lg bg-muted/30 border border-border">
+              <h3 className="text-sm font-semibold flex items-center gap-2 text-foreground">
                 <Lock className="h-4 w-4" />
                 Encryption Settings
               </h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="passphrase" className="text-sm text-white">
-                    Passphrase <span className="text-red-400">*</span>
+                  <Label htmlFor="passphrase" className="text-sm text-foreground">
+                    Passphrase <span className="text-red-500 font-bold">*</span>
                   </Label>
                   <Input
                     id="passphrase"
@@ -285,11 +250,11 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onClose }) => {
                     value={passphrase}
                     onChange={(e) => setPassphrase(e.target.value)}
                     required
-                    className="bg-white/5 border-white/20 text-white placeholder:text-white/40"
+                    className="bg-muted border-border text-foreground placeholder:text-muted-foreground/40"
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="folder" className="text-sm text-white">
+                  <Label htmlFor="folder" className="text-sm text-foreground">
                     Folder (Optional)
                   </Label>
                   <Input
@@ -298,7 +263,7 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onClose }) => {
                     placeholder="Organize in folder"
                     value={folder}
                     onChange={(e) => setFolder(e.target.value)}
-                    className="bg-white/5 border-white/20 text-white placeholder:text-white/40"
+                    className="bg-muted border-border text-foreground placeholder:text-muted-foreground/40"
                   />
                 </div>
               </div>
@@ -341,6 +306,16 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onClose }) => {
           </div>
         </div>
       </div>
+      
+      {recoveryKey && (
+        <RecoveryKeyModal 
+          recoveryKey={recoveryKey} 
+          onClose={() => {
+            setRecoveryKey(null);
+            onClose();
+          }} 
+        />
+      )}
     </div>
   );
 };

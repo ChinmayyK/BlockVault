@@ -29,18 +29,31 @@ export function EntitySidebar({
     redactionComplete
 }: EntitySidebarProps) {
 
-    // Group entities by type
-    const groups = entities.reduce((acc, ent) => {
+    // Group entities by type and then by term group matching
+    const typeGroups = entities.reduce((acc, ent) => {
         const type = ent.entity_type || "UNKNOWN";
-        if (!acc[type]) acc[type] = [];
-        acc[type].push(ent);
+        if (!acc[type]) acc[type] = { singletons: [], termGroups: {} };
+        
+        if (ent.group_id) {
+            if (!acc[type].termGroups[ent.group_id]) acc[type].termGroups[ent.group_id] = [];
+            acc[type].termGroups[ent.group_id].push(ent);
+        } else {
+            acc[type].singletons.push(ent);
+        }
         return acc;
-    }, {} as Record<string, RedactEntity[]>);
+    }, {} as Record<string, { singletons: RedactEntity[], termGroups: Record<string, RedactEntity[]> }>);
 
     const handleToggleGroup = (type: string, checked: boolean) => {
-        const groupEntities = groups[type] || [];
-        groupEntities.forEach(ent => {
-            if (ent.id) onToggleEntity(ent.id, checked);
+        const typeData = typeGroups[type];
+        if (!typeData) return;
+        
+        typeData.singletons.forEach(ent => {
+             if (ent.id) onToggleEntity(ent.id, checked);
+        });
+        Object.values(typeData.termGroups).forEach(group => {
+             group.forEach(ent => {
+                 if (ent.id) onToggleEntity(ent.id, checked);
+             });
         });
     };
 
@@ -72,8 +85,9 @@ export function EntitySidebar({
                     </div>
                 ) : (
                     <>
-                        {Object.keys(groups).sort().map(type => {
-                            const typeEntities = groups[type];
+                        {Object.keys(typeGroups).sort().map(type => {
+                            const typeData = typeGroups[type];
+                            const typeEntities = [...typeData.singletons, ...Object.values(typeData.termGroups).flat()];
                             const allGroupChecked = typeEntities.every(e => e.approved !== false);
 
                             return (
@@ -92,7 +106,48 @@ export function EntitySidebar({
                                     </div>
 
                                     <div className="space-y-2">
-                                        {typeEntities.map((ent, idx) => {
+                                        {/* Render Term Groups */}
+                                        {Object.entries(typeData.termGroups).map(([groupId, groupEntities]) => {
+                                            const allTermChecked = groupEntities.every(e => e.approved !== false);
+                                            const termText = groupEntities[0].text;
+                                            // Handle case where some are checked and some aren't
+                                            const someChecked = groupEntities.some(e => e.approved !== false);
+                                            const isIndeterminate = someChecked && !allTermChecked;
+
+                                            return (
+                                                <div key={groupId} className={`flex flex-col gap-1 p-2 rounded-md transition-colors ${allTermChecked ? 'bg-indigo-500/10 border border-indigo-500/30' : isIndeterminate ? 'bg-amber-500/10 border border-amber-500/30' : 'bg-muted/30 border border-transparent'} hover:bg-muted/50`}>
+                                                   <div className="flex items-start gap-3">
+                                                       <Checkbox 
+                                                            className="mt-1"
+                                                            checked={isIndeterminate ? "indeterminate" : allTermChecked} 
+                                                            onCheckedChange={(c) => {
+                                                                const checkedState = c === true || c === "indeterminate"; // If indeterminate was clicked, it usually resolves to true
+                                                                groupEntities.forEach(ent => onToggleEntity(ent.id!, checkedState));
+                                                            }} 
+                                                       />
+                                                       <div className="flex-1 min-w-0">
+                                                           <div className="flex items-center justify-between">
+                                                               <span className={`text-[10px] font-medium tracking-wide flex items-center gap-1 ${isIndeterminate ? 'text-amber-500' : 'text-indigo-400'}`}>
+                                                                   REPEATED TERM
+                                                                   <span className={`${isIndeterminate ? 'bg-amber-500/20 text-amber-500 border-amber-500/30' : 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30'} border text-[9px] px-1.5 py-0.5 rounded-full`}>{groupEntities.length}</span>
+                                                               </span>
+                                                           </div>
+                                                           <p className={`text-sm mt-0.5 break-words ${allTermChecked || isIndeterminate ? 'text-foreground' : 'text-muted-foreground line-through opacity-70'}`} title={termText}>
+                                                               {termText}
+                                                           </p>
+                                                           <div className="mt-1 flex flex-wrap gap-1">
+                                                               {Array.from(new Set(groupEntities.map(e => e.page))).map(page => (
+                                                                   <span key={page} className="text-[9px] text-muted-foreground bg-muted px-1 rounded-sm">Pg {page}</span>
+                                                               ))}
+                                                           </div>
+                                                       </div>
+                                                   </div>
+                                                </div>
+                                            );
+                                        })}
+
+                                        {/* Render Singletons */}
+                                        {typeData.singletons.map((ent, idx) => {
                                             const isChecked = ent.approved !== false;
                                             const isManual = ent.entity_type === "MANUAL";
 

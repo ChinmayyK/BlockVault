@@ -3,11 +3,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/contexts/AuthContext";
-import { useRBAC } from "@/contexts/RBACContext";
+import { WorkspaceSwitcher } from "@/components/workspaces/WorkspaceSwitcher";
 
 export function TopBar() {
   const { user, isAuthenticated } = useAuth();
-  const { currentUser } = useRBAC();
 
   return (
     <header
@@ -16,8 +15,9 @@ export function TopBar() {
     >
       <div className="flex h-full items-center justify-between px-6">
         {/* Search */}
-        <div className="flex-1 max-w-xl">
-          <div className="relative">
+        <div className="flex-1 max-w-xl flex items-center gap-4">
+          <WorkspaceSwitcher />
+          <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               type="search"
@@ -35,8 +35,8 @@ export function TopBar() {
               <span className="text-sm font-mono text-muted-foreground">
                 {user.address.slice(0, 6)}...{user.address.slice(-4)}
               </span>
-              {currentUser?.role && (
-                <Badge variant="outline" className="ml-1">{currentUser.role}</Badge>
+              {user?.role && (
+                <Badge variant="outline" className="ml-1">{user.role}</Badge>
               )}
             </div>
           ) : (

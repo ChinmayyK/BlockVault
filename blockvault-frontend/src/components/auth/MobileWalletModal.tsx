@@ -4,6 +4,7 @@ import { MobileWalletConnect } from './MobileWalletConnect';
 // import { ethers } from 'ethers';
 import toast from 'react-hot-toast';
 import { writeStoredUser } from '@/utils/authStorage';
+import { isUserRejection } from '@/utils/walletErrors';
 
 interface MobileWalletModalProps {
   onClose: () => void;
@@ -34,14 +35,22 @@ export const MobileWalletModal: React.FC<MobileWalletModalProps> = ({
       onClose();
     } catch (error: any) {
       console.error('Wallet connection error:', error);
-      toast.error(error.message || 'Failed to connect wallet');
+      if (isUserRejection(error)) {
+        toast.error('Login cancelled');
+      } else {
+        toast.error(error.message || 'Failed to connect wallet');
+      }
     } finally {
       setIsConnecting(false);
     }
   };
 
-  const handleError = (error: string) => {
-    toast.error(error);
+  const handleError = (error: any) => {
+    if (isUserRejection(error)) {
+      toast.error('Connection cancelled');
+    } else {
+      toast.error(typeof error === 'string' ? error : (error.message || 'Failed to connect wallet'));
+    }
   };
 
 

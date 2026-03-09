@@ -41,33 +41,33 @@ export default function LearnMorePage() {
   const coreFeatures = [
     {
       icon: Shield,
-      title: "End-to-End Encryption",
-      description: "Military-grade AES-256-GCM encryption ensures your files are encrypted before they leave your device. Only you hold the keys.",
+      title: "Zero-Knowledge Encryption Ecosystem",
+      description: "Military-grade AES-256-GCM local encryption utilizing a unique key-wrapping architecture. Your data is secured with Passphrase, RSA, and Secure Recovery Keys.",
       benefits: [
-        "Files encrypted locally before upload",
-        "Zero-knowledge architecture",
-        "RSA-2048 for key exchange",
-        "Quantum-resistant algorithms"
+        "Local AES-256-GCM File Key generation",
+        "RSA-2048 for secure key exchange",
+        "Ethereum Wallet & Passphrase wrapping",
+        "Secure Key Recovery System"
       ]
     },
     {
       icon: Globe,
       title: "IPFS Decentralized Storage",
-      description: "Your files are stored across a global network of nodes, ensuring availability, redundancy, and censorship resistance.",
+      description: "Your files are encrypted and stored across the IPFS network, ensuring high availability, redundancy, and censorship resistance.",
       benefits: [
-        "No single point of failure",
-        "Content-addressed storage",
-        "Global CDN performance",
+        "Cryptographically secure storage",
+        "Content-addressed IPFS CIDs",
+        "Global peer-to-peer performance",
         "Permanent file availability"
       ]
     },
     {
       icon: Link2,
       title: "Blockchain Verification",
-      description: "Every document action is recorded on the blockchain, creating an immutable audit trail and chain of custody.",
+      description: "Every document signature and notarization is anchored on the blockchain, creating an immutable audit trail and verifiable chain of custody.",
       benefits: [
         "Tamper-proof records",
-        "Cryptographic verification",
+        "Cryptographic signature proofs",
         "Complete transparency",
         "Legal admissibility"
       ]
@@ -78,30 +78,30 @@ export default function LearnMorePage() {
     {
       icon: FileText,
       title: "Document Notarization",
-      description: "Notarize documents on the blockchain with cryptographic proof of existence and timestamp.",
-      technical: "SHA-256 hashing + smart contract registration",
+      description: "Notarize documents on the blockchain with cryptographic proof of existence and timestamp validation.",
+      technical: "SHA-256 hashing + smart contract commitments",
       useCase: "Proof of authorship, timestamp verification, legal compliance"
     },
     {
-      icon: Eye,
-      title: "ZKPT Redaction",
-      description: "Zero-Knowledge Proof of Transformation - redact sensitive information while proving the transformation was valid.",
-      technical: "zk-SNARKs circuits verify redaction integrity",
-      useCase: "Privacy-preserving document sharing, GDPR compliance, client confidentiality"
+      icon: Brain,
+      title: "AI-Powered ZK Redaction",
+      description: "Intelligently detect PII using precision AI models, and redact sensitive information while proving the transformation via zero-knowledge proofs.",
+      technical: "PaddleOCR + Presidio NLP + Groth16 zk-SNARKs",
+      useCase: "Privacy-preserving document sharing, automated PII redaction"
     },
     {
       icon: PenTool,
-      title: "E-Signature Workflows",
-      description: "Multi-party digital signatures with smart contract escrow and automatic execution upon completion.",
-      technical: "Ethereum smart contracts + cryptographic signatures",
-      useCase: "Contracts, agreements, approval workflows, legal documents"
+      title: "Cryptographic Signatures",
+      description: "Digitally sign documents using Ethereum wallets and secure RSA keys, creating an undeniable mathematical tie to your identity.",
+      technical: "EIP-712 / Personal Sign + AES-2048 asymmetric keys",
+      useCase: "Contracts, agreements, approval workflows, verifiable mandates"
     },
     {
-      icon: Brain,
-      title: "ZKML AI Analysis",
-      description: "Zero-Knowledge Machine Learning - analyze documents with AI while keeping data private using encrypted computation.",
-      technical: "Homomorphic encryption + ML models",
-      useCase: "Document classification, risk assessment, compliance checking"
+      icon: Key,
+      title: "Secure Key Recovery",
+      description: "Easily recover lost passwords using our unique 16-character recovery keys without exposing your master encryption to the server.",
+      technical: "File Key Wrapping Architecture",
+      useCase: "Account recovery, business continuity, emergency file access"
     }
   ];
 
@@ -110,33 +110,33 @@ export default function LearnMorePage() {
       icon: Lock,
       title: "Multi-Layer Security",
       points: [
-        "AES-256-GCM symmetric encryption",
-        "RSA-2048 asymmetric encryption",
+        "AES-256-GCM symmetric file encryption",
+        "RSA-2048 key exchange + wrapping",
         "Ethereum wallet-based authentication",
         "JWT token management",
-        "Secure key derivation (PBKDF2)"
+        "Secure Recovery Key derivation"
       ]
     },
     {
       icon: Users,
-      title: "Role-Based Access Control (RBAC)",
+      title: "Decentralized Access Control",
       points: [
-        "Granular permission system",
-        "5 predefined roles (Attorney, Paralegal, Client, etc.)",
-        "Custom role creation",
-        "Firm-level access control",
-        "Audit logging"
+        "File-level cryptographic access provisioning",
+        "No centralized permission bypass",
+        "Wallet-secured identities",
+        "Revocable RSA-enabled sharing",
+        "Immutable sharing logs"
       ]
     },
     {
       icon: Database,
       title: "Secure File Sharing",
       points: [
-        "Encrypted key exchange",
-        "Time-limited access",
-        "Revocable permissions",
-        "Share tracking",
-        "Access logs"
+        "Encrypted RSA key exchange",
+        "Zero-knowledge recipient transmission",
+        "Instant one-click revocation",
+        "Verifiable signature tracking",
+        "End-to-end payload protection"
       ]
     }
   ];
@@ -147,71 +147,62 @@ export default function LearnMorePage() {
       specs: [
         { label: "Symmetric Encryption", value: "AES-256-GCM" },
         { label: "Asymmetric Encryption", value: "RSA-2048" },
-        { label: "Key Derivation", value: "PBKDF2" },
+        { label: "Digital Signatures", value: "Ethereum ECDSA" },
         { label: "Hash Algorithm", value: "SHA-256" }
       ]
     },
     {
-      category: "Blockchain",
+      category: "AI & Zero-Knowledge",
       specs: [
-        { label: "Network", value: "Ethereum (EVM compatible)" },
-        { label: "Smart Contracts", value: "Solidity 0.8+" },
-        { label: "Gas Optimization", value: "Optimized for low fees" },
-        { label: "Standards", value: "ERC standards compliant" }
-      ]
-    },
-    {
-      category: "Storage",
-      specs: [
-        { label: "Decentralized Storage", value: "IPFS" },
-        { label: "Content Addressing", value: "CID (Content Identifier)" },
-        { label: "File Size Limit", value: "100 MB per file" },
-        { label: "Storage Type", value: "Permanent, immutable" }
-      ]
-    },
-    {
-      category: "Zero-Knowledge Proofs",
-      specs: [
+        { label: "PII NLP Engine", value: "Microsoft Presidio" },
+        { label: "Layout OCR", value: "PaddleOCR" },
         { label: "Proof System", value: "zk-SNARKs (Groth16)" },
-        { label: "Circuit Library", value: "snarkjs" },
-        { label: "Use Cases", value: "Redaction, Privacy, Verification" },
-        { label: "Verification", value: "On-chain + Off-chain" }
+        { label: "Circuits", value: "snarkjs Redaction" }
+      ]
+    },
+    {
+      category: "Storage & Network",
+      specs: [
+        { label: "Decentralized Storage", value: "IPFS Network" },
+        { label: "Content Addressing", value: "CIDv1" },
+        { label: "Storage Architecture", value: "Immutable" },
+        { label: "On-Chain Commitments", value: "EVM Smart Contracts" }
       ]
     }
   ];
 
   const workflows = [
     {
-      title: "File Upload Workflow",
+      title: "Secure Upload & Key Wrapping",
       steps: [
         { step: 1, action: "Select file from device" },
-        { step: 2, action: "Encrypt locally with passphrase" },
-        { step: 3, action: "Generate file hash (SHA-256)" },
-        { step: 4, action: "Upload encrypted file to IPFS" },
-        { step: 5, action: "Record CID on blockchain" },
-        { step: 6, action: "Store metadata in database" }
+        { step: 2, action: "Generate random AES File Key" },
+        { step: 3, action: "Encrypt file locally with AES-256-GCM" },
+        { step: 4, action: "Wrap File Key with your Passphrase/RSA" },
+        { step: 5, action: "Upload encrypted bytes to IPFS" },
+        { step: 6, action: "Server yields 16-char Recovery Key" }
       ]
     },
     {
-      title: "Document Notarization Workflow",
+      title: "AI Redaction & ZK Verification",
       steps: [
-        { step: 1, action: "Select document to notarize" },
-        { step: 2, action: "Compute document hash" },
-        { step: 3, action: "Create zero-knowledge proof" },
-        { step: 4, action: "Submit to smart contract" },
-        { step: 5, action: "Blockchain confirmation" },
-        { step: 6, action: "Receive notarization certificate" }
+        { step: 1, action: "Select document to redact" },
+        { step: 2, action: "AI detects PII elements (Presidio/PaddleOCR)" },
+        { step: 3, action: "Add manual redactions dynamically" },
+        { step: 4, action: "Generate zk-SNARKs proofs of operation" },
+        { step: 5, action: "Anchor ZK commitments on blockchain" },
+        { step: 6, action: "Verify proofs transparently" }
       ]
     },
     {
-      title: "Signature Request Workflow",
+      title: "Cryptographic Signatures",
       steps: [
-        { step: 1, action: "Upload document for signature" },
-        { step: 2, action: "Define signers and deadline" },
-        { step: 3, action: "Create smart contract escrow" },
-        { step: 4, action: "Notify signers" },
-        { step: 5, action: "Collect digital signatures" },
-        { step: 6, action: "Auto-execute upon completion" }
+        { step: 1, action: "Upload document and select signers" },
+        { step: 2, action: "Share file keys securely via RSA" },
+        { step: 3, action: "Signers review securely in browser" },
+        { step: 4, action: "Confirm signature using Web3 Wallet" },
+        { step: 5, action: "Hash & address stored in block-record" },
+        { step: 6, action: "Track lifecycle and proof transparency" }
       ]
     }
   ];
@@ -246,27 +237,27 @@ export default function LearnMorePage() {
   const faqs = [
     {
       q: "How secure is my data?",
-      a: "Your files are encrypted with AES-256-GCM before leaving your device. We use zero-knowledge architecture, meaning we never have access to your unencrypted data or encryption keys. Combined with blockchain verification and IPFS storage, your data is protected at every layer."
+      a: "Your files are encrypted locally with a unique AES-256-GCM File Key before leaving your device. We use a zero-knowledge key wrap architecture, meaning we never have access to your unencrypted data, Passphrase, or RSA private keys. Combined with IPFS decentralized storage, your data is protected at every layer."
     },
     {
-      q: "What is Zero-Knowledge Proof of Transformation (ZKPT)?",
-      a: "ZKPT allows you to redact sensitive information from documents while cryptographically proving that only redactions were made - no other alterations. This maintains document integrity while protecting privacy, crucial for legal compliance and client confidentiality."
+      q: "What is AI-Powered ZK Redaction?",
+      a: "BlockVault utilizes an advanced hybrid pipeline consisting of PaddleOCR for layout-aware text extraction and Microsoft Presidio for robust NLP-based PII detection. After redaction, Zero-Knowledge Proofs (zk-SNARKs) allow you to cryptographically prove that only the targeted redactions were made, maintaining document integrity while protecting privacy."
     },
     {
-      q: "How does blockchain verification work?",
-      a: "When you upload or notarize a document, we compute a cryptographic hash (SHA-256) of the file and record it on the Ethereum blockchain. This creates an immutable timestamp and proof of existence. Anyone can verify the document hasn't been tampered with by comparing hashes."
+      q: "What happens if I forget my Passphrase?",
+      a: "BlockVault features an innovative Secure Key Recovery system. During file upload and account setup, a 16-character Recovery Key is generated. This Recovery Key can seamlessly unwrap your underlying File Keys to regain access and reset your Passphrase without degrading the zero-knowledge guarantee of the original encryption."
     },
     {
       q: "Can I revoke access to shared files?",
-      a: "Yes! You have complete control over file sharing. You can revoke access at any time, set expiration dates, and track who has accessed your files. All access events are logged for your records."
+      a: "Yes! File sharing operates securely via RSA asymmetric encryption. Because every share creates a cryptographic key arrangement, you retain total control over file access. You can revoke access at any time through our real-time interface."
     },
     {
       q: "What happens to my files if BlockVault shuts down?",
-      a: "Your files are stored on IPFS, a decentralized network that exists independently of BlockVault. Even if our service shuts down, your files remain accessible via their Content Identifiers (CIDs) from any IPFS gateway. Your encryption keys are stored locally, ensuring you always maintain control."
+      a: "Your encrypted payloads are pinned on IPFS, a decentralized network that exists independently of BlockVault. Even if our indexing service goes offline, your files remain accessible via their Content Identifiers (CIDs) from any standard IPFS gateway. Because your primary execution environment is local, you can always decrypt data as long as you retain your key material."
     },
     {
-      q: "Is this legally admissible in court?",
-      a: "Blockchain-based evidence is increasingly recognized in courts worldwide. Our system provides cryptographic proof of document existence, timestamps, and chain of custody - all elements that enhance legal admissibility. However, specific admissibility depends on jurisdiction and case context."
+      q: "Are the digital signatures legally admissible?",
+      a: "BlockVault signatures generate indisputable, non-repudiable proof using Ethereum signatures (ECDSA/EIP-712). Rather than relying on easily-faked email proofs, our system provides an immutable cryptographic bind between a verified user's Web3 identity and the document hash, exceeding standard compliance measures for legal validity."
     }
   ];
 

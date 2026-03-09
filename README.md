@@ -155,10 +155,10 @@ BlockVault is designed for:
 
 ## Features
 
-### 🔐 End-to-End Encryption
-- **AES-256-GCM** encryption for file content
-- **RSA-2048** for secure key exchange
-- **PBKDF2** key derivation with configurable iterations
+### 🔐 Zero-Knowledge Encryption Ecosystem
+- **AES-256-GCM** local file encryption via generated File Keys
+- **RSA-2048** and Passphrase for secure key-wrapping
+- **Secure Key Recovery** system using 16-character recovery codes
 - Files encrypted before upload - server never sees plaintext
 
 ### 🌐 IPFS Decentralized Storage
@@ -173,17 +173,17 @@ BlockVault is designed for:
 - Public verification of document hashes
 - Timestamped proof of existence
 
-### 🔒 Zero-Knowledge Proofs
-- **ZKPT (Zero-Knowledge Proof of Text)** for redaction verification
-- **ZKML (Zero-Knowledge Machine Learning)** for document analysis
+### 🔒 AI-Powered ZK Redaction
+- **Microsoft Presidio & PaddleOCR** for intelligent PII detection and OCR
+- **zk-SNARKs (Groth16)** for cryptographic proof of valid redaction
 - Verify document properties without revealing content
 - Privacy-preserving compliance checks
 
-### 👥 Role-Based Access Control (RBAC)
-- Granular permission management
-- Team member roles and access levels
-- Secure file sharing with encrypted keys
-- Audit trail for all access events
+### 👥 Decentralized Access Control
+- File-level cryptographic access provisioning
+- RSA-enabled revocable sharing directly to recipient wallets
+- No centralized permission bypass
+- Immutable audit trail for all access events
 
 ### 📝 Document Notarization
 - Blockchain-anchored notarization
@@ -320,10 +320,11 @@ BlockVault is designed for:
 
 ### Data Flow
 
-1. **File Upload**:
-   - User selects file → Frontend encrypts with AES-256-GCM
+1. **File Upload & Key Wrapping**:
+   - User selects file → Frontend generates random AES-256-GCM File Key
+   - File is encrypted locally → File Key is wrapped with Passphrase and RSA
    - Encrypted file sent to backend → Backend uploads to IPFS
-   - File hash anchored on blockchain → Metadata stored in MongoDB
+   - Backend creates unique Recovery Key → Anchor hash to blockchain
 
 2. **File Download**:
    - User requests file → Backend retrieves from IPFS
@@ -331,9 +332,9 @@ BlockVault is designed for:
    - File displayed/downloaded to user
 
 3. **File Sharing**:
-   - Owner creates share → RSA public key used for encryption
+   - Owner creates share → RSA public key of recipient used to wrap the File Key
    - Share record created in MongoDB → Recipient receives encrypted key
-   - Recipient decrypts with private key → Access granted
+   - Recipient unwraps with local RSA private key → Access granted
 
 4. **Document Verification**:
    - User requests verification → Backend queries blockchain

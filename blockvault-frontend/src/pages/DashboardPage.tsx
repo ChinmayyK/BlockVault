@@ -260,11 +260,12 @@ export default function DashboardPage() {
         >
           <span className="absolute inset-0 rounded-full bg-gradient-to-br from-blue-500 via-indigo-500 to-violet-500 opacity-60 blur-lg transition-all duration-300 group-hover:opacity-90 group-hover:blur-xl" />
           <span className="absolute inset-0 rounded-full border border-blue-400/50 opacity-40 group-hover:opacity-60 transition" />
-          <div className="relative flex h-16 w-16 items-center justify-center rounded-full bg-slate-950/90 shadow-[0_25px_45px_-20px_rgba(56,189,248,0.65)] transition-all duration-300 group-hover:scale-110 group-hover:shadow-[0_30px_60px_-18px_rgba(99,102,241,0.75)] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-blue-400/40">
-            <Plus className="h-8 w-8 text-white transition-transform duration-300 group-hover:rotate-90" />
+          <div className="relative flex h-16 w-16 items-center justify-center rounded-full bg-background border border-border shadow-[0_25px_45px_-20px_rgba(56,189,248,0.45)] transition-all duration-300 group-hover:scale-110 group-hover:shadow-[0_30px_60px_-18px_rgba(99,102,241,0.55)] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-blue-400/40">
+            <Plus className="h-8 w-8 text-foreground transition-transform duration-300 group-hover:rotate-90" />
           </div>
-          <span className="absolute right-full mr-4 rounded-full bg-slate-900/90 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-blue-100 opacity-0 transition-all duration-300 group-hover:translate-x-0 group-hover:opacity-100">
-            Upload
+          <span className="absolute right-full mr-4 rounded-full bg-card/95 border border-border shadow-xl px-4 py-2 text-xs font-bold uppercase tracking-wider text-foreground opacity-0 transition-all duration-300 group-hover:translate-x-0 group-hover:opacity-100 flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
+            Upload File
           </span>
         </button>
       )}

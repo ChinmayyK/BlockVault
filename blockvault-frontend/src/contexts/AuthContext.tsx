@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, ReactNode } from
 import { ethers } from 'ethers';
 import toast from 'react-hot-toast';
 import { getApiBase } from '@/lib/getApiBase';
+import { isUserRejection } from '@/utils/walletErrors';
 import { env } from '@/config/env';
 import { AUTH_STORAGE_KEY, readStoredUser, writeStoredUser, clearStoredUser } from '@/utils/authStorage';
 import { rsaKeyManager } from '@/lib/crypto/rsa';
@@ -12,6 +13,7 @@ interface User {
   user_id?: string;
   wallets?: string[];
   requires_wallet_link?: boolean;
+  role?: 'ADMIN' | 'OWNER' | 'EDITOR' | 'VIEWER' | string;
 }
 
 interface AuthContextType {
@@ -334,6 +336,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
       toast.success('Wallet connected successfully');
     } catch (err: any) {
+      if (isUserRejection(err)) {
+        toast.error('Connection cancelled');
+        return;
+      }
       const errorMessage = err.message || 'Failed to connect wallet';
       setError(errorMessage);
       toast.error(errorMessage);
@@ -484,6 +490,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         });
       }
     } catch (err: any) {
+      if (isUserRejection(err)) {
+        toast.error('Login cancelled');
+        return;
+      }
       const errorMessage = err.message || 'Login failed';
       setError(errorMessage);
       toast.error(errorMessage);
@@ -510,7 +520,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         throw new Error(errorData.error || 'Login failed');
       }
 
-      const { token, user_id, address, wallets, requires_wallet_link } = await loginResponse.json();
+      const { token, user_id, address, wallets, requires_wallet_link, role } = await loginResponse.json();
 
       // Update user with JWT and address (if available)
       const updatedUser: User = {
@@ -519,6 +529,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         user_id,
         wallets,
         requires_wallet_link,
+        role: role || 'OWNER', // Default to OWNER if not provided
       };
       setUser(updatedUser);
 

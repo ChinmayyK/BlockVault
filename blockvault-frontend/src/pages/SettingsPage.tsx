@@ -13,6 +13,7 @@ import toast from "react-hot-toast";
 import type { UserProfile } from "@/types/userProfile";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { RSAManager } from "@/components/shared/RSAManager";
+import { ConfirmModal } from "@/components/ui/ConfirmModal";
 
 export default function SettingsPage() {
   const { user } = useAuth();
@@ -32,6 +33,8 @@ export default function SettingsPage() {
   const [walletWatch, setWalletWatch] = useState(true);
   const [statementDelivery, setStatementDelivery] = useState<"monthly" | "quarterly">("monthly");
   const [showRSAManager, setShowRSAManager] = useState(false);
+  const [showCancelConfirm, setShowCancelConfirm] = useState(false);
+  const [isCancelled, setIsCancelled] = useState(false);
 
   const persistPreferences = (updates: Partial<UserProfile["preferences"]>) => {
     if (!rbac?.updateUserProfile) return;
@@ -136,13 +139,47 @@ export default function SettingsPage() {
   };
 
   const handleResetSessions = () => {
-    toast.success("All active sessions will be reset (mock)");
+    toast.loading("Resetting all active sessions and clearing cache...");
+    setTimeout(() => {
+      localStorage.clear();
+      window.location.reload();
+    }, 1500);
   };
 
   const handleExportBilling = () => {
-    toast.loading("Preparing billing export…", { duration: 2000 });
+    toast.loading("Gathering invoice history...", { duration: 1500 });
+    
     setTimeout(() => {
-      toast.success("Billing data exported to secure vault");
+      // Create mock CSV content
+      const csvContent = [
+        ["Invoice ID", "Date", "Amount", "Status", "Description"],
+        ["INV-2024-001", "2024-01-01", "$499.00", "Paid", "Enterprise Shield - Monthly"],
+        ["INV-2024-002", "2024-02-01", "$499.00", "Paid", "Enterprise Shield - Monthly"],
+        ["INV-2024-003", "2024-03-01", "$499.00", "Paid", "Enterprise Shield - Monthly"],
+        ["INV-2024-004", "2024-03-05", "$12.40", "Paid", "Excess Storage Fees"],
+      ].map(e => e.join(",")).join("\n");
+
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.setAttribute("href", url);
+      link.setAttribute("download", `blockvault_billing_${new Date().toISOString().split('T')[0]}.csv`);
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      toast.success("Billing data exported successfully");
+    }, 1500);
+  };
+
+  const handleCancelSubscription = () => {
+    setShowCancelConfirm(false);
+    toast.loading("Processing cancellation request...");
+    
+    setTimeout(() => {
+      setIsCancelled(true);
+      toast.success("Subscription cancellation pending. Your access remains until 03 Nov 2025.");
     }, 2000);
   };
 
@@ -203,9 +240,11 @@ export default function SettingsPage() {
               <CardTitle className="text-sm font-medium text-muted-foreground">Billing</CardTitle>
               <CreditCard className="h-4 w-4 text-primary" />
         </CardHeader>
-        <CardContent>
+            <CardContent>
               <p className="text-lg font-semibold text-foreground">Plan: Enterprise Shield</p>
-              <p className="text-xs text-muted-foreground mt-1">Renewal: 03 Nov 2025</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                {isCancelled ? "Access ends: 03 Nov 2025" : "Renewal: 03 Nov 2025"}
+              </p>
             </CardContent>
           </Card>
         </div>
@@ -473,7 +512,7 @@ export default function SettingsPage() {
         </CardHeader>
             <CardContent className="space-y-5">
               <div className="grid gap-4 md:grid-cols-3">
-                <BillingStat label="Plan" value="Enterprise Shield" accent="emerald" />
+                <BillingStat label="Plan" value={isCancelled ? "Enterprise (Ending)" : "Enterprise Shield"} accent={isCancelled ? "purple" : "emerald"} />
                 <BillingStat label="Seats" value="25 of 50" accent="emerald" />
                 <BillingStat label="Storage" value="2.4 TB / 5 TB" accent="emerald" />
               </div>
@@ -519,16 +558,32 @@ export default function SettingsPage() {
                     Downgrade or cancel your plan. Files remain encrypted, but blockchain anchoring stops.
                   </p>
                 </div>
-                <Button variant="outline" className="border-red-500/40 text-red-400 hover:bg-red-500/10">
+                <Button 
+                  variant="outline" 
+                  className="border-red-500/40 text-red-400 hover:bg-red-500/10 disabled:opacity-50"
+                  onClick={() => setShowCancelConfirm(true)}
+                  disabled={isCancelled}
+                >
                   <LogOut className="mr-2 h-4 w-4" />
-                  Request Cancellation
-          </Button>
+                  {isCancelled ? "Cancellation Pending" : "Request Cancellation"}
+                </Button>
               </div>
         </CardContent>
       </Card>
         </TabsContent>
       </Tabs>
       {showRSAManager && <RSAManager onClose={() => setShowRSAManager(false)} />}
+      
+      <ConfirmModal
+        isOpen={showCancelConfirm}
+        onCancel={() => setShowCancelConfirm(false)}
+        onConfirm={handleCancelSubscription}
+        title="Cancel Subscription?"
+        message="Are you sure you want to cancel your Enterprise Shield subscription? Your files will remain encrypted, but blockchain anchoring and automated compliance features will be suspended at the end of your billing cycle."
+        confirmText="Confirm Cancellation"
+        cancelText="Keep My Plan"
+        isDanger={true}
+      />
     </div>
   );
 }

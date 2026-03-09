@@ -6,6 +6,7 @@ import toast from 'react-hot-toast';
 import { getApiBase as resolveApiBase } from '@/lib/getApiBase';
 import { readStoredUser } from '@/utils/authStorage';
 import { LegalModalFrame } from '@/components/legal/modals/LegalModalFrame';
+import { ConfirmModal } from '@/components/ui/ConfirmModal';
 
 interface RSAManagerProps {
   onClose: () => void;
@@ -16,6 +17,7 @@ export const RSAManager: React.FC<RSAManagerProps> = ({ onClose }) => {
   const [publicKey, setPublicKey] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [isRegistered, setIsRegistered] = useState(false);
+  const [isConfirmOpen, setIsConfirmOpen] = useState(false);
   const API_BASE = resolveApiBase();
 
   const checkRegistrationStatus = useCallback(async () => {
@@ -159,14 +161,17 @@ export const RSAManager: React.FC<RSAManagerProps> = ({ onClose }) => {
     }
   };
 
+  const handleConfirmDelete = () => {
+    rsaKeyManager.clearKeyPair();
+    setHasKeys(false);
+    setPublicKey(null);
+    setIsRegistered(false);
+    setIsConfirmOpen(false);
+    toast.success('RSA keys deleted');
+  };
+
   const deleteKeys = () => {
-    if (window.confirm('Are you sure you want to delete your RSA keys? This will prevent you from sharing files.')) {
-      rsaKeyManager.clearKeyPair();
-      setHasKeys(false);
-      setPublicKey(null);
-      setIsRegistered(false);
-      toast.success('RSA keys deleted');
-    }
+    setIsConfirmOpen(true);
   };
 
   const downloadKeys = () => {
@@ -200,22 +205,22 @@ export const RSAManager: React.FC<RSAManagerProps> = ({ onClose }) => {
       {hasKeys && (
         <Button
           onClick={registerPublicKey}
-          loading={loading}
+          disabled={loading}
           variant="modal-primary"
-          className="min-w-[190px] shadow-[0_0_20px_hsl(var(--accent-blue-glow))]"
-          leftIcon={<Shield className="w-4 h-4" />}
+          className="min-w-[190px] shadow-[0_0_20px_hsl(var(--accent-blue-glow))] flex gap-2 items-center justify-center"
         >
+          <Shield className="w-4 h-4 mr-1" />
           {isRegistered ? 'Re-Register Public Key' : 'Register Public Key'}
         </Button>
       )}
       {!hasKeys && (
         <Button
           onClick={generateKeys}
-          loading={loading}
+          disabled={loading}
           variant="modal-primary"
-          className="min-w-[190px] shadow-[0_0_20px_hsl(var(--accent-blue-glow))]"
-          leftIcon={<Key className="w-4 h-4" />}
+          className="min-w-[190px] shadow-[0_0_20px_hsl(var(--accent-blue-glow))] flex gap-2 items-center justify-center"
         >
+          <Key className="w-4 h-4 mr-1" />
           Generate RSA Keys
         </Button>
       )}
@@ -280,27 +285,29 @@ export const RSAManager: React.FC<RSAManagerProps> = ({ onClose }) => {
           <div className="flex flex-wrap gap-3">
             <Button
               onClick={registerPublicKey}
-              loading={loading}
-              leftIcon={<Shield className="w-4 h-4" />}
+              disabled={loading}
               variant="default"
-              className="bg-blue-600 hover:bg-blue-700"
+              className="bg-blue-600 hover:bg-blue-700 flex gap-2 items-center justify-center"
             >
+              <Shield className="w-4 h-4 mr-1" />
               {isRegistered ? 'Re-Register Public Key' : 'Register Public Key'}
             </Button>
 
             <Button
               onClick={downloadKeys}
               variant="outline"
-              leftIcon={<Download className="w-4 h-4" />}
+              className="flex gap-2 items-center justify-center"
             >
+              <Download className="w-4 h-4 mr-1" />
               Download Keys
             </Button>
 
             <Button
               onClick={deleteKeys}
-              variant="danger"
-              leftIcon={<Trash2 className="w-4 h-4" />}
+              variant="modal-danger"
+              className="flex gap-2 items-center justify-center"
             >
+              <Trash2 className="w-4 h-4 mr-1" />
               Delete Keys
             </Button>
           </div>
@@ -332,6 +339,16 @@ export const RSAManager: React.FC<RSAManagerProps> = ({ onClose }) => {
           </div>
         </div>
       </div>
+
+      <ConfirmModal
+        isOpen={isConfirmOpen}
+        title="Delete RSA Keys"
+        message="Are you sure you want to delete your RSA keys? This will prevent you from sharing files."
+        onConfirm={handleConfirmDelete}
+        onCancel={() => setIsConfirmOpen(false)}
+        isDanger={true}
+        confirmText="Delete"
+      />
     </LegalModalFrame>
   );
 };

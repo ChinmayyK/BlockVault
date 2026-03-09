@@ -1,6 +1,7 @@
 import { useRef, useState, useEffect, MouseEvent, useMemo } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
 import { Rnd } from "react-rnd";
+import { ZoomIn, ZoomOut, Maximize, Minimize } from "lucide-react";
 import { RedactEntity, ManualRect, SearchMatch } from "../../types/redactor";
 
 import 'react-pdf/dist/Page/AnnotationLayer.css';
@@ -21,6 +22,9 @@ interface VirtualPageProps {
     hoveredEntityId?: string | null;
     onSelectBox?: (id: string | null) => void;
     onHoverEntity?: (id: string | null) => void;
+    reviewMode?: boolean;
+    currentReviewEntityId?: string | null;
+    heatmapMode?: boolean;
 }
 
 function VirtualPage({
@@ -37,7 +41,10 @@ function VirtualPage({
     selectedBoxId,
     hoveredEntityId,
     onSelectBox,
-    onHoverEntity
+    onHoverEntity,
+    reviewMode,
+    currentReviewEntityId,
+    heatmapMode
 }: VirtualPageProps) {
     const containerRef = useRef<HTMLDivElement>(null);
     const [isVisible, setIsVisible] = useState(false);
@@ -148,23 +155,52 @@ function VirtualPage({
                             let stroke = "transparent";
                             let strokeWidth = 0;
 
-                            if (previewMode) {
+                            const highRiskTypes = ["CREDIT_CARD", "US_SSN", "IBAN_CODE", "CRYPTO", "IP_ADDRESS", "PASSPORT", "AADHAAR", "PAN_CARD"];
+                            const medRiskTypes = ["EMAIL_ADDRESS", "PHONE_NUMBER", "PERSON", "NRP", "LOCATION", "ORG", "COMPANY", "DATE_TIME"];
+
+                            let entityColorBase = "rgba(0,0,0,"; // Default black
+                            let entityStrokeBase = "rgba(239,68,68,"; // Default red stroke for unapproved
+                            
+                            if (heatmapMode) {
+                                if (highRiskTypes.includes(ent.entity_type || "")) {
+                                    entityColorBase = "rgba(239, 68, 68, "; // Red
+                                    entityStrokeBase = "rgba(248, 113, 113, ";
+                                } else if (medRiskTypes.includes(ent.entity_type || "")) {
+                                    entityColorBase = "rgba(245, 158, 11, "; // Amber
+                                    entityStrokeBase = "rgba(251, 191, 36, ";
+                                } else {
+                                    entityColorBase = "rgba(16, 185, 129, "; // Emerald
+                                    entityStrokeBase = "rgba(52, 211, 153, ";
+                                }
+                            }
+
+                            if (previewMode && !reviewMode && !heatmapMode) {
                                 if (isApproved) {
                                     fill = "rgba(0,0,0,1)";
                                 }
                             } else {
-                                if (isApproved) {
+                                if (heatmapMode) {
+                                    fill = entityColorBase + "0.6)";
+                                    stroke = entityStrokeBase + "1)";
+                                    strokeWidth = 2;
+                                } else if (isApproved) {
                                     fill = "rgba(0,0,0,0.85)";
                                 } else {
                                     fill = "rgba(239,68,68,0.2)";
                                     stroke = "rgba(239,68,68,1)";
-                                    strokeWidth = 2;
+                                    strokeWidth = 1;
                                 }
 
-                                if (isHovered) {
+                                if (isHovered && !heatmapMode) {
                                     stroke = "rgba(59,130,246,1)"; // Blue highlight
                                     strokeWidth = 3;
                                     fill = isApproved ? "rgba(0,0,0,0.9)" : "rgba(59,130,246,0.3)";
+                                }
+
+                                if (reviewMode && currentReviewEntityId === ent.id && !heatmapMode) {
+                                    stroke = "rgba(56, 189, 248, 1)"; // Bright glowing blue
+                                    strokeWidth = 4;
+                                    fill = "rgba(56, 189, 248, 0.2)";
                                 }
                             }
 
@@ -311,6 +347,9 @@ interface DocumentViewerProps {
     hoveredEntityId?: string | null;
     onSelectBox?: (id: string | null) => void;
     onHoverEntity?: (id: string | null) => void;
+    reviewMode?: boolean;
+    currentReviewEntityId?: string | null;
+    heatmapMode?: boolean;
 }
 
 export function DocumentViewer({
@@ -326,7 +365,10 @@ export function DocumentViewer({
     selectedBoxId,
     hoveredEntityId,
     onSelectBox,
-    onHoverEntity
+    onHoverEntity,
+    reviewMode,
+    currentReviewEntityId,
+    heatmapMode
 }: DocumentViewerProps) {
     const [numPages, setNumPages] = useState<number>(0);
     const [currentPage, setCurrentPage] = useState<number>(1);
@@ -358,25 +400,51 @@ export function DocumentViewer({
     return (
         <div className="flex flex-col h-full bg-background relative" ref={containerRef}>
             {/* Top Toolbar */}
-            <div className="flex items-center justify-between p-2 border-b bg-card z-10 sticky top-0">
-                <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium">{numPages} Pages</span>
+            <div className="flex items-center justify-between p-3 border-b border-border/60 bg-card/95 backdrop-blur z-10 sticky top-0 shadow-sm">
+                <div className="flex items-center gap-4">
+                    <span className="text-sm font-medium text-foreground bg-primary/10 text-primary px-3 py-1 rounded-full">{numPages} Pages</span>
                 </div>
-                <div className="flex items-center gap-2">
-                    <button onClick={() => setScale(s => Math.max(0.5, s - 0.1))} className="px-2 py-1 text-xs border rounded bg-background hover:bg-muted">-</button>
-                    <span className="text-sm w-12 text-center">{Math.round(scale * 100)}%</span>
-                    <button onClick={() => setScale(s => Math.min(3, s + 0.1))} className="px-2 py-1 text-xs border rounded bg-background hover:bg-muted">+</button>
+                <div className="flex items-center gap-3">
+                    <button onClick={() => setScale(s => Math.max(0.5, s - 0.1))} className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-accent rounded-md transition-colors" title="Zoom Out">
+                        <ZoomOut className="w-4 h-4" />
+                    </button>
+                    
+                    <input 
+                        type="range" 
+                        min="50" 
+                        max="300" 
+                        value={Math.round(scale * 100)} 
+                        onChange={(e) => setScale(Number(e.target.value) / 100)}
+                        className="w-24 h-1.5 bg-accent rounded-lg appearance-none cursor-pointer accent-primary" 
+                    />
+                    
+                    <span className="text-sm w-12 text-center font-medium">{Math.round(scale * 100)}%</span>
+                    
+                    <button onClick={() => setScale(s => Math.min(3, s + 0.1))} className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-accent rounded-md transition-colors" title="Zoom In">
+                        <ZoomIn className="w-4 h-4" />
+                    </button>
+                    
+                    <div className="h-4 w-px bg-border mx-1"></div>
+
                     <button
                         onClick={() => {
                             if (containerRef.current) {
-                                // Fit to width roughly (subtracting sidebar width)
                                 const w = containerRef.current.clientWidth;
-                                setScale(Math.max(0.5, (w - 300) / 600)); // Rough estimation
+                                setScale(Math.max(0.5, (w - 300) / 800)); // Fit to width
                             }
                         }}
-                        className="px-2 py-1 text-xs border rounded bg-background hover:bg-muted"
+                        className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-accent rounded-md transition-colors"
+                        title="Fit to Width"
                     >
-                        Fit
+                        <Maximize className="w-4 h-4" />
+                    </button>
+
+                    <button
+                        onClick={() => setScale(1)}
+                        className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-accent rounded-md transition-colors"
+                        title="Fit to Page (100%)"
+                    >
+                        <Minimize className="w-4 h-4" />
                     </button>
                 </div>
             </div>
@@ -413,25 +481,33 @@ export function DocumentViewer({
                         loading={<div className="p-10 text-center animate-pulse">Loading Document...</div>}
                         error={<div className="p-10 text-red-500 text-center">Failed to load PDF. Please ensure CORS/network settings allow loading.</div>}
                     >
-                        {pages.map(pageNum => (
-                            <VirtualPage
-                                key={`vpage-${pageNum}`}
-                                pageNumber={pageNum}
-                                scale={scale}
-                                entities={entities.filter(e => e.page === pageNum)}
-                                manualBoxes={manualBoxes.filter(b => b.page === pageNum)}
-                                searchMatches={searchMatches.filter(m => m.page === pageNum)}
-                                onAddManualBox={onAddManualBox}
-                                onUpdateManualBox={onUpdateManualBox}
-                                onToggleEntity={onToggleEntity}
-                                activeTool={activeTool}
-                                previewMode={previewMode}
-                                selectedBoxId={selectedBoxId}
-                                hoveredEntityId={hoveredEntityId}
-                                onSelectBox={onSelectBox}
-                                onHoverEntity={onHoverEntity}
-                            />
-                        ))}
+                        {pages.map(pageNum => {
+                            const pageEntities = entities.filter(e => e.page === pageNum);
+                            const pageManualBoxes = manualBoxes.filter(b => b.page === pageNum);
+                            const pageSearchBoxes = searchMatches.filter(m => m.page === pageNum);
+                            return (
+                                <VirtualPage
+                                    key={`vpage-${pageNum}`}
+                                    pageNumber={pageNum}
+                                    scale={scale}
+                                    entities={pageEntities}
+                                    manualBoxes={pageManualBoxes}
+                                    searchMatches={pageSearchBoxes}
+                                    onAddManualBox={onAddManualBox}
+                                    onUpdateManualBox={onUpdateManualBox}
+                                    onToggleEntity={onToggleEntity}
+                                    activeTool={activeTool}
+                                    previewMode={previewMode}
+                                    selectedBoxId={selectedBoxId}
+                                    hoveredEntityId={hoveredEntityId}
+                                    onSelectBox={onSelectBox}
+                                    onHoverEntity={onHoverEntity}
+                                    reviewMode={reviewMode}
+                                    currentReviewEntityId={currentReviewEntityId}
+                                    heatmapMode={heatmapMode}
+                                />
+                            );
+                        })}
                     </Document>
                 </div>
             </div>

@@ -6,10 +6,8 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 
 const navigation = [
-  { name: "Files", href: "/files", icon: FileText },
-  { name: "Legal", href: "/legal", icon: Scale },
-  { name: "Cases", href: "/cases", icon: Briefcase },
-  { name: "Blockchain", href: "/blockchain", icon: Link2 },
+  { name: "Personal Vault", href: "/files", icon: FileText },
+  { name: "Organizations", href: "/orgs", icon: Briefcase },
   { name: "Settings", href: "/settings", icon: Settings },
 ];
 

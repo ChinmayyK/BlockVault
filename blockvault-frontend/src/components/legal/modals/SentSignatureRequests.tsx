@@ -15,6 +15,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import { fetchWithTimeout } from '@/utils/fetchWithTimeout';
 import { getApiBase as resolveApiBase } from '@/lib/getApiBase';
 import { readStoredUser } from '@/utils/authStorage';
+import { ConfirmModal } from '@/components/ui/ConfirmModal';
+import toast from 'react-hot-toast';
 
 interface SentSignatureRequest {
   id: string;
@@ -38,6 +40,7 @@ export const SentSignatureRequests: React.FC = () => {
   const [signatureRequests, setSignatureRequests] = useState<SentSignatureRequest[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isConfirmOpen, setIsConfirmOpen] = useState(false);
 
   const API_BASE = resolveApiBase();
 
@@ -137,29 +140,20 @@ export const SentSignatureRequests: React.FC = () => {
     }
   }, [user?.address]);
 
-  const clearLocalSentSignatureRequests = () => {
-    if (!user?.address) {
-      toast.error('You must be signed in to clear requests.');
-      return;
-    }
-
-    const confirmed = window.confirm('Clear all locally stored sent signature requests for this account?');
-    if (!confirmed) {
-      return;
-    }
-
+  const handleConfirmClear = () => {
     const allRequests = JSON.parse(localStorage.getItem('blockvault_signature_requests') || '[]');
     const toClear = allRequests.filter(
-      (req: any) => req.requestedBy?.toLowerCase() === user.address?.toLowerCase()
+      (req: any) => req.requestedBy?.toLowerCase() === user?.address?.toLowerCase()
     );
 
     if (toClear.length === 0) {
       toast.success('No locally stored sent requests to clear.');
+      setIsConfirmOpen(false);
       return;
     }
 
     const remaining = allRequests.filter(
-      (req: any) => req.requestedBy?.toLowerCase() !== user.address?.toLowerCase()
+      (req: any) => req.requestedBy?.toLowerCase() !== user?.address?.toLowerCase()
     );
     localStorage.setItem('blockvault_signature_requests', JSON.stringify(remaining));
 
@@ -167,7 +161,17 @@ export const SentSignatureRequests: React.FC = () => {
     setSignatureRequests((prev) => prev.filter((req) => !clearedIds.has(req.id)));
 
     toast.success('Cleared local sent signature requests.');
+    setIsConfirmOpen(false);
     setTimeout(loadSentSignatureRequests, 200);
+  };
+
+  const clearLocalSentSignatureRequests = () => {
+    if (!user?.address) {
+      toast.error('You must be signed in to clear requests.');
+      return;
+    }
+
+    setIsConfirmOpen(true);
   };
 
   // Load sent signature requests on mount and listen for updates
@@ -403,6 +407,16 @@ export const SentSignatureRequests: React.FC = () => {
           ))}
         </div>
       )}
+
+      <ConfirmModal
+        isOpen={isConfirmOpen}
+        title="Clear Local Requests"
+        message="Clear all locally stored sent signature requests for this account?"
+        onConfirm={handleConfirmClear}
+        onCancel={() => setIsConfirmOpen(false)}
+        isDanger={true}
+        confirmText="Clear"
+      />
     </div>
   );
 };

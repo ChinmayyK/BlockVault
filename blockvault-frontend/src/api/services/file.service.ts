@@ -81,5 +81,26 @@ export const fileService = {
     return response.data;
   },
 
+  /**
+   * Test a recovery key against a file wrapper
+   */
+  async recoverFile(fileId: string, recoveryKey: string) {
+    const response = await apiClient.post(`/files/${fileId}/recover`, {
+      recovery_key: recoveryKey,
+    });
+    return response.data;
+  },
+
+  /**
+   * Reset passphrase using recovery key
+   */
+  async resetPassphrase(fileId: string, recoveryKey: string, newPassphrase: string) {
+    const response = await apiClient.post(`/files/${fileId}/reset-passphrase`, {
+      recovery_key: recoveryKey,
+      new_passphrase: newPassphrase,
+    });
+    return response.data;
+  },
+
 };
 

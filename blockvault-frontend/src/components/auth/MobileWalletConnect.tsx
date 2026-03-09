@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 
 interface MobileWalletConnectProps {
   onConnect: (address: string, provider: any) => void;
-  onError: (error: string) => void;
+  onError: (error: any) => void;
 }
 
 export const MobileWalletConnect: React.FC<MobileWalletConnectProps> = ({
@@ -29,7 +29,7 @@ export const MobileWalletConnect: React.FC<MobileWalletConnectProps> = ({
       onError('WalletConnect integration requires setup. Please use MetaMask, Trust Wallet, or Coinbase Wallet for now.');
     } catch (error: any) {
       console.error('WalletConnect error:', error);
-      onError(error.message || 'Failed to connect wallet');
+      onError(error);
     } finally {
       setIsConnecting(false);
     }
@@ -76,7 +76,7 @@ export const MobileWalletConnect: React.FC<MobileWalletConnectProps> = ({
       }
     } catch (error: any) {
       console.error('MetaMask error:', error);
-      onError(error.message || 'Failed to connect MetaMask');
+      onError(error);
     } finally {
       setIsConnecting(false);
     }
@@ -100,7 +100,7 @@ export const MobileWalletConnect: React.FC<MobileWalletConnectProps> = ({
       }
     } catch (error: any) {
       console.error('Trust Wallet error:', error);
-      onError(error.message || 'Failed to connect Trust Wallet');
+      onError(error);
     } finally {
       setIsConnecting(false);
     }
@@ -124,7 +124,7 @@ export const MobileWalletConnect: React.FC<MobileWalletConnectProps> = ({
       }
     } catch (error: any) {
       console.error('Coinbase Wallet error:', error);
-      onError(error.message || 'Failed to connect Coinbase Wallet');
+      onError(error);
     } finally {
       setIsConnecting(false);
     }

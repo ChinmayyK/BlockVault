@@ -126,3 +126,4 @@ describe('fetchWithTimeout', () => {
     expect(removeListenerSpy).toHaveBeenCalledWith('abort', expect.any(Function));
   });
 });
+

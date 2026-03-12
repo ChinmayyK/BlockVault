@@ -352,3 +352,4 @@ const TimelineEventRow: React.FC<TimelineEventRowProps> = ({ event, index, isLas
     </li>
   );
 };
+

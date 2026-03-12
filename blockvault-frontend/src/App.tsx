@@ -20,6 +20,7 @@ const LegalPage = lazy(() => import("./pages/LegalPage"));
 const CasesPage = lazy(() => import("./pages/CasesPage"));
 const BlockchainPage = lazy(() => import("./pages/BlockchainPage"));
 const SettingsPage = lazy(() => import("./pages/SettingsPage"));
+const ComplianceSettingsPage = lazy(() => import("./pages/ComplianceSettingsPage"));
 const NotFoundPage = lazy(() => import("./pages/NotFoundPage"));
 const RedactPage = lazy(() => import("./pages/RedactPage"));
 const RecoverFilePage = lazy(() => import("./pages/RecoverFile"));
@@ -156,6 +157,14 @@ const App = () => {
                             element={
                               <ProtectedRoute>
                                 <MainLayout><SettingsPage /></MainLayout>
+                              </ProtectedRoute>
+                            }
+                          />
+                          <Route
+                            path="/settings/compliance"
+                            element={
+                              <ProtectedRoute>
+                                <MainLayout><ComplianceSettingsPage /></MainLayout>
                               </ProtectedRoute>
                             }
                           />

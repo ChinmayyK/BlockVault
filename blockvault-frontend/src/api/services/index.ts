@@ -4,6 +4,7 @@ export * from './file.service';
 export * from './case.service';
 export * from './legal.service';
 export * from './blockchain.service';
+export * from './compliance.service';
 
 
 

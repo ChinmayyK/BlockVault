@@ -224,6 +224,9 @@ def create_app() -> Flask:
     app.register_blueprint(settings_bp, url_prefix="/settings")
     app.register_blueprint(blockchain_bp, url_prefix="/blockchain")
 
+    from .api.compliance import bp as compliance_bp
+    app.register_blueprint(compliance_bp, url_prefix="/compliance")
+
     from .mock_cases import register_case_routes
     register_case_routes(app)
 

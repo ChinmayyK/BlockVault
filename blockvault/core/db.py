@@ -55,6 +55,9 @@ def init_db(app: Flask) -> None:
 
     # Create indexes (idempotent — safe to run every startup)
     _ensure_indexes(_database)
+    
+    # Seed default compliance profiles (idempotent)
+    _seed_default_data(_database)
 
 
 def _ensure_indexes(db: Database) -> None:
@@ -84,6 +87,15 @@ def _ensure_indexes(db: Database) -> None:
         logger.info("MongoDB indexes ensured.")
     except Exception as exc:
         logger.warning("Failed to create indexes (non-fatal): %s", exc)
+
+
+def _seed_default_data(db: Database) -> None:
+    """Seed default data (compliance profiles, etc.)."""
+    try:
+        from blockvault.core.compliance_profiles import seed_compliance_profiles
+        seed_compliance_profiles(db)
+    except Exception as exc:
+        logger.warning("Failed to seed default data (non-fatal): %s", exc)
 
 def get_db() -> Database:
     """Return the shared database handle.

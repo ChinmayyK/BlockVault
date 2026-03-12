@@ -669,6 +669,44 @@ def _deduplicate_by_bbox(entities: List[Entity], overlap_threshold: float = 0.50
     return result + without_bbox
 
 
+def _apply_compliance_filtering(
+    entities: List[Entity],
+    allowed_rules: Optional[set[str]],
+    risk_threshold: Optional[str],
+) -> List[Entity]:
+    """Filter entities based on compliance profile rules and risk threshold.
+
+    Args:
+        entities: List of detected entities
+        allowed_rules: Set of allowed detection rule types (e.g., {"PERSON", "EMAIL"})
+        risk_threshold: Risk threshold level ("low", "medium", "high")
+
+    Returns:
+        Filtered list of entities
+    """
+    if not entities:
+        return []
+
+    filtered = entities
+
+    # Filter by allowed rules
+    if allowed_rules:
+        filtered = [e for e in filtered if e.entity_type.upper() in allowed_rules]
+
+    # Filter by risk threshold
+    if risk_threshold:
+        threshold_map = {
+            "low": 0.3,
+            "medium": 0.55,
+            "high": 0.75,
+        }
+        min_score = threshold_map.get(risk_threshold, 0.55)
+        filtered = [e for e in filtered if e.score >= min_score]
+
+    return filtered
+
+
+
 # ---------------------------------------------------------------------------
 # OCR fallback for scanned pages
 # ---------------------------------------------------------------------------
@@ -816,14 +854,43 @@ def analyze_pdf_bytes(
     pdf_bytes: bytes,
     min_confidence: float = DEFAULT_MIN_CONFIDENCE,
     custom_terms: Optional[List[str]] = None,
+    org_id: Optional[str] = None,
+    compliance_profile: Optional[dict] = None,
 ) -> List[dict]:
     """Analyze a PDF and return entities with bounding boxes.
+
+    Args:
+        pdf_bytes: PDF document bytes
+        min_confidence: Minimum confidence threshold for detection
+        custom_terms: Additional custom terms to detect
+        org_id: Organization ID for profile lookup
+        compliance_profile: Pre-loaded profile (optimization)
 
     Returns a list of entity dicts matching the redactor API response format.
     """
     fitz = _ensure_fitz()
     doc = fitz.open(stream=pdf_bytes, filetype="pdf")
     all_entities: List[Entity] = []
+
+    # Load compliance profile if org_id provided
+    profile = compliance_profile
+    if org_id and not profile:
+        from blockvault.core.organizations import OrganizationStore
+        from blockvault.core.compliance_profiles import ComplianceProfileStore
+
+        org_store = OrganizationStore()
+        profile_name = org_store.get_compliance_profile(org_id)
+
+        if profile_name:
+            profile_store = ComplianceProfileStore()
+            profile = profile_store.get_profile_by_name(profile_name)
+
+    # Extract profile settings
+    allowed_rules = None
+    risk_threshold = None
+    if profile:
+        allowed_rules = set(profile.get("rules", []))
+        risk_threshold = profile.get("risk_threshold", "medium")
 
     for page_num in range(len(doc)):
         page = doc[page_num]
@@ -875,7 +942,12 @@ def analyze_pdf_bytes(
     # Secondary bbox-based deduplication
     all_entities = _deduplicate_by_bbox(all_entities)
 
+    # Apply compliance profile filtering
+    if profile:
+        all_entities = _apply_compliance_filtering(all_entities, allowed_rules, risk_threshold)
+
     return [e.to_dict() for e in all_entities]
+
 
 
 # ---------------------------------------------------------------------------

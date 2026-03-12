@@ -874,8 +874,6 @@ def _calculate_risk_score(entities: List[Dict[str, Any]]) -> Dict[str, Any]:
     }
 
 
-@bp.post("/<file_id>/analyze-redaction", strict_slashes=False)
-@require_auth
 def analyze_redaction(file_id: str):  # type: ignore
     """Detect PII entities in a document.
 
@@ -894,6 +892,26 @@ def analyze_redaction(file_id: str):  # type: ignore
 
     decrypted_bytes = _decrypt_file_bytes(rec, key)
     filename = rec.get("original_name", "document.bin")
+
+    # Get organization ID from request (if provided)
+    org_id = request.form.get("org_id") or request.headers.get("X-Org-ID")
+
+    # Load compliance profile if org_id provided
+    compliance_profile = None
+    profile_name = None
+    if org_id:
+        try:
+            from ..core.organizations import OrganizationStore
+            from ..core.compliance_profiles import ComplianceProfileStore
+
+            org_store = OrganizationStore()
+            profile_name = org_store.get_compliance_profile(org_id)
+
+            if profile_name:
+                profile_store = ComplianceProfileStore()
+                compliance_profile = profile_store.get_profile_by_name(profile_name)
+        except Exception as exc:
+            current_app.logger.warning("Failed to load compliance profile: %s", exc)
 
     # --- Strategy 1: try external redactor microservice ---
     redactor_url = current_app.config.get("REDACTOR_SERVICE_URL")
@@ -917,7 +935,11 @@ def analyze_redaction(file_id: str):  # type: ignore
     if not entities:
         try:
             from ..core.inline_redactor import analyze_pdf_bytes
-            entities = analyze_pdf_bytes(decrypted_bytes)
+            entities = analyze_pdf_bytes(
+                decrypted_bytes,
+                org_id=org_id,
+                compliance_profile=compliance_profile,
+            )
             current_app.logger.info(
                 "analyze-redaction: inline detector found %d entities", len(entities)
             )
@@ -930,14 +952,42 @@ def analyze_redaction(file_id: str):  # type: ignore
 
     # --- Global Risk Calculation ---
     risk_report = _calculate_risk_score(entities)
-    
+
+    # Add compliance profile information to risk report
+    if profile_name:
+        risk_report["profile_name"] = profile_name
+        # Calculate detection counts by entity type
+        detection_counts = {}
+        for entity in entities:
+            entity_type = entity.get("entity_type", "UNKNOWN").upper()
+            detection_counts[entity_type] = detection_counts.get(entity_type, 0) + 1
+        risk_report["detection_counts"] = detection_counts
+
     # Store the risk scan metadata
     get_db().files.update_one(
-        {"_id": canonical_id}, 
+        {"_id": canonical_id},
         {"$set": {"risk_scan": risk_report}}
     )
-    
+
+    # Log compliance scan event if profile active
+    if profile_name:
+        try:
+            from ..core.audit import log_event
+            log_event(
+                action="compliance_scan",
+                user_id=owner,
+                target_id=canonical_id,
+                details={
+                    "profile_name": profile_name,
+                    "detection_counts": risk_report.get("detection_counts", {}),
+                    "total_detections": len(entities),
+                },
+            )
+        except Exception as exc:
+            current_app.logger.warning("Failed to log compliance scan event: %s", exc)
+
     return {"entities": entities, "risk_report": risk_report}
+
 
 @bp.post("/<file_id>/search-redaction", strict_slashes=False)
 @require_auth

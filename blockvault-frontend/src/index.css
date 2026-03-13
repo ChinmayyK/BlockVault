@@ -233,6 +233,22 @@ All colors MUST be HSL.
     mask-image: linear-gradient(to right, black 98%, transparent);
     -webkit-mask-image: linear-gradient(to right, black 98%, transparent);
   }
+
+  /* Timeline event entrance animation */
+  @keyframes timeline-fade-in {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .timeline-event-enter {
+    animation: timeline-fade-in 0.35s ease-out both;
+  }
 }
 
 @layer components {

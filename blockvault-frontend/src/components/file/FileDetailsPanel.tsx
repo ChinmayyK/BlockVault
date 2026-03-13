@@ -1,9 +1,11 @@
-import React from 'react';
-import { X, FileText, Lock, ShieldCheck, Database, File, HardDrive } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { X, FileText, Lock, ShieldCheck, Database, File, HardDrive, Activity } from 'lucide-react';
 import { FileTimeline } from './FileTimeline';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { fileService } from '@/api/services/file.service';
+import type { TimelineEvent } from '@/types/timeline';
 
 interface FileDetailsPanelProps {
     file: any | null;
@@ -19,50 +21,36 @@ const formatBytes = (bytes: number) => {
 };
 
 export const FileDetailsPanel: React.FC<FileDetailsPanelProps> = ({ file, onClose }) => {
-    if (!file) return null;
+    const [timelineEvents, setTimelineEvents] = useState<TimelineEvent[]>([]);
+    const [timelineLoading, setTimelineLoading] = useState(false);
 
-    // Create a mock timeline based on file metadata for demonstration
-    // In a real app, this would be fetched from an audit log endpoint
-    const mockEvents: any[] = [
-        {
-            id: '1',
-            timestamp: new Date(file.upload_date),
-            action: 'Document Uploaded',
-            status: 'success' as const,
-            type: 'upload' as const,
-            actor: file.user_address?.substring(0, 6) + '...' + file.user_address?.substring(38) || 'System',
-        },
-        {
-            id: '2',
-            timestamp: new Date(new Date(file.upload_date).getTime() + 1000), // +1 sec
-            action: 'Encrypted via AES-256-GCM',
-            description: 'Client-side encryption applied before network transfer.',
-            status: 'success' as const,
-            type: 'encrypt' as const,
+    useEffect(() => {
+        if (!file?.id) {
+            setTimelineEvents([]);
+            return;
         }
-    ];
 
-    if (file.redaction_status === 'completed' || file.metadata?.redacted) {
-        mockEvents.push({
-            id: '3',
-            timestamp: new Date(new Date(file.upload_date).getTime() + 60000), // +1 min
-            action: 'Redactions Applied',
-            description: 'Sensitive entities permanently removed from document.',
-            status: 'success' as const,
-            type: 'redact' as const,
-        });
-    }
+        let cancelled = false;
+        setTimelineLoading(true);
 
-    if (file.proof_status === 'verified' || file.metadata?.proof_cid) {
-        mockEvents.push({
-            id: '4',
-            timestamp: new Date(new Date(file.upload_date).getTime() + 65000), 
-            action: 'ZK Proof Verified',
-            description: 'Zero-knowledge computation integrity verified on-chain.',
-            status: 'success' as const,
-            type: 'proof' as const,
-        });
-    }
+        fileService
+            .getFileActivity(file.id, file)
+            .then((events) => {
+                if (!cancelled) setTimelineEvents(events);
+            })
+            .catch(() => {
+                if (!cancelled) setTimelineEvents([]);
+            })
+            .finally(() => {
+                if (!cancelled) setTimelineLoading(false);
+            });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [file?.id]);
+
+    if (!file) return null;
 
     return (
         <div className="h-full flex flex-col bg-card border-l shadow-2xl animate-in slide-in-from-right-8 duration-300 w-80 sm:w-96 shrink-0 z-40 fixed md:relative right-0 top-0 bottom-0 overflow-hidden">
@@ -149,10 +137,12 @@ export const FileDetailsPanel: React.FC<FileDetailsPanelProps> = ({ file, onClos
                         </div>
                     )}
 
-                    {/* Activity Timeline */}
+                    {/* Document Activity Timeline */}
                     <div className="space-y-3">
-                        <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Activity Log</h4>
-                        <FileTimeline events={mockEvents} />
+                        <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                            <Activity className="w-4 h-4" /> Document Activity
+                        </h4>
+                        <FileTimeline events={timelineEvents} loading={timelineLoading} />
                     </div>
 
                 </div>

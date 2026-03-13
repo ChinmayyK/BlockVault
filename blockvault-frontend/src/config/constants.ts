@@ -29,6 +29,7 @@ export const API_ENDPOINTS = {
     SHARE: (id: string) => `/files/${id}/share`,
     SHARED: '/files/shared',
     SHARES_OUTGOING: '/files/shares/outgoing',
+    ACTIVITY: (id: string) => `/files/${id}/activity`,
   },
   CASES: {
     LIST: '/cases',

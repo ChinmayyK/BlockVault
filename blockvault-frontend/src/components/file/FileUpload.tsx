@@ -9,6 +9,7 @@ import { Progress } from '@/components/ui/progress';
 import { GlowingSeparator } from '@/components/ui/glowing-separator';
 import { validatePassphrase } from '@/utils/passphrase';
 import { RecoveryKeyModal } from '../security/RecoveryKeyModal';
+import { LegalModalFrame } from '@/components/legal/modals/LegalModalFrame';
 
 interface FileUploadProps {
   onClose: () => void;
@@ -106,34 +107,54 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onClose }) => {
     return '📁';
   };
 
-  return (
-    <div 
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/90 backdrop-blur-sm"
-      onClick={onClose}
-    >
-      <div 
-        className="relative w-full max-w-2xl bg-card border border-border shadow-2xl rounded-2xl animate-in fade-in-0 zoom-in-95 duration-200"
-        onClick={(e) => e.stopPropagation()}
+  const footer = (
+    <div className="flex w-full items-center gap-3">
+      <Button
+        variant="modal-secondary"
+        onClick={onClose}
+        disabled={uploadStatus === 'uploading'}
+        className="flex-1"
       >
-        <div className="p-8">
-          {/* Header */}
-          <div className="flex items-start justify-between mb-6">
-            <div>
-              <h2 className="text-2xl font-semibold mb-2 text-foreground">
-                Upload Secure File
-              </h2>
-              <p className="text-sm text-muted-foreground">
-                Upload your file with end-to-end encryption and blockchain verification
-              </p>
-            </div>
-            <button
-              onClick={onClose}
-              className="p-2 rounded-full hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
-              aria-label="Close"
-            >
-              <X className="h-5 w-5" />
-            </button>
-          </div>
+        Cancel
+      </Button>
+      <Button
+        onClick={handleUpload}
+        disabled={!file || !passphrase || uploadStatus === 'uploading'}
+        variant="modal-primary"
+        className="flex-1 gap-2 shadow-[0_0_20px_hsl(var(--accent-blue-glow))]"
+      >
+        {uploadStatus === 'uploading' ? (
+          <>
+            <div className="w-4 h-4 border-2 border-black/30 border-t-black rounded-full animate-spin" />
+            Uploading... {Math.round(uploadProgress)}%
+          </>
+        ) : uploadStatus === 'success' ? (
+          <>
+            <CheckCircle className="h-4 w-4" />
+            Uploaded
+          </>
+        ) : (
+          <>
+            <Upload className="h-4 w-4" />
+            Upload & Encrypt
+          </>
+        )}
+      </Button>
+    </div>
+  );
+
+  return (
+    <>
+      <LegalModalFrame
+        icon={<Upload className="h-5 w-5" />}
+        title="Upload Secure File"
+        subtitle="Upload your file with end-to-end encryption and blockchain verification"
+        onClose={onClose}
+        footer={footer}
+        headerAccent="blue"
+        widthClassName="max-w-2xl"
+      >
+        <div className="space-y-6">
 
           {/* Error Message */}
           {errorMessage && uploadStatus !== 'uploading' && (
@@ -270,42 +291,8 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onClose }) => {
             </div>
           )}
 
-          {/* Action Buttons */}
-          <div className="flex items-center gap-3">
-            <Button
-              variant="modal-secondary"
-              onClick={onClose}
-              disabled={uploadStatus === 'uploading'}
-              className="flex-1"
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={handleUpload}
-              disabled={!file || !passphrase || uploadStatus === 'uploading'}
-              variant="modal-primary"
-              className="flex-1 gap-2 shadow-[0_0_20px_hsl(var(--accent-blue-glow))]"
-            >
-              {uploadStatus === 'uploading' ? (
-                <>
-                  <div className="w-4 h-4 border-2 border-black/30 border-t-black rounded-full animate-spin" />
-                  Uploading... {Math.round(uploadProgress)}%
-                </>
-              ) : uploadStatus === 'success' ? (
-                <>
-                  <CheckCircle className="h-4 w-4" />
-                  Uploaded
-                </>
-              ) : (
-                <>
-                  <Upload className="h-4 w-4" />
-                  Upload & Encrypt
-                </>
-              )}
-            </Button>
-          </div>
         </div>
-      </div>
+      </LegalModalFrame>
       
       {recoveryKey && (
         <RecoveryKeyModal 
@@ -316,6 +303,6 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onClose }) => {
           }} 
         />
       )}
-    </div>
+    </>
   );
 };

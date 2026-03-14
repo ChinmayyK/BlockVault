@@ -16,6 +16,7 @@ const LoginPage = lazy(() =>
   import("./components/auth/LoginPage").then((mod) => ({ default: mod.LoginPage }))
 );
 const DashboardPage = lazy(() => import("./pages/DashboardPage"));
+const FilesPage = lazy(() => import("./pages/FilesPage"));
 const AnalyticsDashboard = lazy(() => import("./pages/AnalyticsDashboard"));
 const BillingPage = lazy(() => import("./pages/BillingPage"));
 const LegalPage = lazy(() => import("./pages/LegalPage"));
@@ -30,6 +31,8 @@ const AdminUsersPage = lazy(() => import("./pages/admin/AdminUsers"));
 const AdminAuditPage = lazy(() => import("./pages/admin/AdminAudit"));
 const OrganizationsPage = lazy(() => import("./pages/Organizations"));
 const WorkspaceDashboardPage = lazy(() => import("./pages/WorkspaceDashboard"));
+const DemoInitPage = lazy(() => import("./pages/DemoInitPage"));
+const DemoRedactPage = lazy(() => import("./pages/DemoRedactPage"));
 
 // Import BlockVault contexts
 import { AuthProvider } from "@/contexts/AuthContext";
@@ -114,11 +117,12 @@ const App = () => {
                           <Route path="/" element={<IndexPage />} />
                           <Route path="/login" element={<LoginPage />} />
                           <Route path="/learn-more" element={<LearnMorePage />} />
+                          <Route path="/demo" element={<DemoInitPage />} />
                           <Route
                             path="/files"
                             element={
                               <ProtectedRoute>
-                                <MainLayout><DashboardPage /></MainLayout>
+                                <MainLayout><FilesPage /></MainLayout>
                               </ProtectedRoute>
                             }
                           />
@@ -191,6 +195,14 @@ const App = () => {
                             element={
                               <ProtectedRoute>
                                 <MainLayout><RedactPage /></MainLayout>
+                              </ProtectedRoute>
+                            }
+                          />
+                          <Route
+                            path="/demo/redact/:fileId"
+                            element={
+                              <ProtectedRoute>
+                                <MainLayout><DemoRedactPage /></MainLayout>
                               </ProtectedRoute>
                             }
                           />

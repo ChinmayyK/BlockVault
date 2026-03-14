@@ -6,6 +6,7 @@ import { isUserRejection } from '@/utils/walletErrors';
 import { env } from '@/config/env';
 import { AUTH_STORAGE_KEY, readStoredUser, writeStoredUser, clearStoredUser } from '@/utils/authStorage';
 import { rsaKeyManager } from '@/lib/crypto/rsa';
+import type { OrgMembership, WorkspaceMembership } from '@/types/roles';
 
 interface User {
   address: string;
@@ -13,7 +14,10 @@ interface User {
   user_id?: string;
   wallets?: string[];
   requires_wallet_link?: boolean;
-  role?: 'ADMIN' | 'OWNER' | 'EDITOR' | 'VIEWER' | string;
+  role?: string;  // Legacy field for backward compat
+  platform_role?: string;
+  organizations?: OrgMembership[];
+  workspaces?: WorkspaceMembership[];
 }
 
 interface AuthContextType {
@@ -131,7 +135,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
         // Optionally validate JWT token if it exists
         // But don't log out if validation fails - just invalidate the JWT
-        if (parsedUser.jwt) {
+        // Skip validation for demo users (synthetic token)
+        if (parsedUser.jwt && parsedUser.address !== 'demo_user') {
           validateToken(parsedUser, parsedUser.jwt);
         }
       }
@@ -178,7 +183,19 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         return;
       } else {
         // Token is still valid - user is fully authenticated
-        console.log('Token is valid, user fully authenticated');
+        const userData = await response.json();
+        console.log('Token is valid, user fully authenticated. Role:', userData.role);
+
+        // Update the role in state and storage if it changed or was missing
+        if (userData.role) {
+          const role = userData.role.toUpperCase();
+          setUser(prev => {
+            if (!prev) return null;
+            const updated = { ...prev, role };
+            writeStoredUser(updated);
+            return updated;
+          });
+        }
 
         // Automatically register RSA public key if keys exist but aren't registered
         // Do this asynchronously so it doesn't block the session restoration
@@ -453,10 +470,17 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       }
 
       const loginData = await loginResponse.json();
-      const { token, rsa_private_key, rsa_public_key, message } = loginData;
+      const { token, rsa_private_key, rsa_public_key, message, platform_role, role, organizations, workspaces } = loginData;
 
-      // Update user with JWT
-      const updatedUser = { ...user, jwt: token };
+      // Update user with JWT and full role context
+      const updatedUser = {
+        ...user,
+        jwt: token,
+        role: platform_role || role || 'USER',
+        platform_role: platform_role || role || 'USER',
+        organizations: organizations || [],
+        workspaces: workspaces || [],
+      };
       setUser(updatedUser);
 
       // Save to localStorage
@@ -520,16 +544,19 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         throw new Error(errorData.error || 'Login failed');
       }
 
-      const { token, user_id, address, wallets, requires_wallet_link, role } = await loginResponse.json();
+      const { token, user_id, address, wallets, requires_wallet_link, role, platform_role, organizations, workspaces } = await loginResponse.json();
 
-      // Update user with JWT and address (if available)
+      // Update user with JWT and full role context
       const updatedUser: User = {
         address: address || '',
         jwt: token,
         user_id,
         wallets,
         requires_wallet_link,
-        role: role || 'OWNER', // Default to OWNER if not provided
+        role: platform_role || role || 'USER',
+        platform_role: platform_role || role || 'USER',
+        organizations: organizations || [],
+        workspaces: workspaces || [],
       };
       setUser(updatedUser);
 

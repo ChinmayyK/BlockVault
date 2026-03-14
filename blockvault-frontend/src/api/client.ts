@@ -61,6 +61,18 @@ apiClient.interceptors.response.use(
       const config = error.config || {};
       const skipRedirect = (config as any).skipAuthRedirect;
       const skipToast = (config as any).skipAuthToast;
+
+      // Don't trigger auth failure for demo users
+      try {
+        const userStr = localStorage.getItem(AUTH_STORAGE_KEY);
+        if (userStr) {
+          const user = JSON.parse(userStr);
+          if (user?.address === 'demo_user') {
+            return Promise.reject(error);
+          }
+        }
+      } catch (_) {}
+
       const now = Date.now();
       if (!skipToast && now - lastAuthToastAt > AUTH_TOAST_COOLDOWN_MS) {
         toast.error('Authentication required. Please sign in again if needed.');

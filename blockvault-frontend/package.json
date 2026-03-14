@@ -55,6 +55,7 @@
     "ethers": "^6.0.0",
     "input-otp": "^1.4.2",
     "ipfs-http-client": "^60.0.0",
+    "jspdf": "^4.2.0",
     "lucide-react": "^0.462.0",
     "mammoth": "^1.11.0",
     "next-themes": "^0.3.0",

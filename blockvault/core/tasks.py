@@ -238,6 +238,12 @@ def generate_redaction_proof_task(self: Any, file_id: str) -> Dict[str, Any]:
         except Exception:
             pass
 
+        try:
+            from blockvault.core.audit import log_event
+            log_event("proof_generation", target_id=file_id, user_id=rec.get("owner"), details={"tx": anchor_tx})
+        except Exception as exc:
+            logger.warning("Failed to log proof_generation event: %s", exc)
+
         logger.info("redaction_proof: generated proof for %s", file_id)
         return {"file_id": file_id, "status": "complete", "proof_location": proof_location}
 
@@ -336,6 +342,12 @@ def batch_anchor(self: Any) -> Dict[str, Any]:
                     "anchor_status": "complete",
                 }},
             )
+            
+            try:
+                from blockvault.core.audit import log_event
+                log_event("blockchain_anchor", target_id=str(rec["_id"]), user_id=rec.get("owner"), details={"tx": anchor_tx})
+            except Exception as exc:
+                logger.warning("Failed to log blockchain_anchor event: %s", exc)
 
         # §4 — Record anchored hashes for dedup
         try:
@@ -421,3 +433,115 @@ def _find_record(coll: Any, file_id: str) -> Optional[Dict[str, Any]]:
 def _set_status(coll: Any, rec: Dict[str, Any], field: str, value: str) -> None:
     """Convenience: set a single status field on a file record."""
     coll.update_one({"_id": rec["_id"]}, {"$set": {field: value}})
+
+# ---------------------------------------------------------------------------
+# Async Analysis (OCR / Risk Scan)
+# ---------------------------------------------------------------------------
+
+@celery.task(bind=True, max_retries=1, default_retry_delay=10)
+def analyze_redaction_async_task(self, file_id: str, key: str, org_id: str, owner: str, canonical_id: str):
+    app = _get_app()
+    with app.app_context():
+        import requests
+        from flask import current_app
+        from blockvault.api.files import _decrypt_file_bytes, _lookup_file, _calculate_risk_score
+
+        coll = _files_collection()
+        rec, _ = _lookup_file(file_id)
+        if not rec:
+            return
+
+        try:
+            decrypted_bytes = _decrypt_file_bytes(rec, key)
+            filename = rec.get("original_name", "document.bin")
+
+            compliance_profile = None
+            profile_name = None
+            if org_id:
+                try:
+                    from blockvault.core.organizations import OrganizationStore
+                    from blockvault.core.compliance_profiles import ComplianceProfileStore
+                    org_store = OrganizationStore()
+                    profile_name = org_store.get_compliance_profile(org_id)
+                    if profile_name:
+                        profile_store = ComplianceProfileStore()
+                        compliance_profile = profile_store.get_profile_by_name(profile_name)
+                except Exception as exc:
+                    logger.warning("Failed to load compliance profile: %s", exc)
+
+            redactor_url = current_app.config.get("REDACTOR_SERVICE_URL")
+            entities = []
+            if redactor_url:
+                try:
+                    resp = requests.post(
+                        f"{redactor_url}/analyze",
+                        files={"file": (filename, decrypted_bytes)},
+                        timeout=30,
+                    )
+                    resp.raise_for_status()
+                    entities = resp.json().get("entities", [])
+                except Exception as exc:
+                    logger.warning("External redactor unavailable (%s)", exc)
+
+            if not entities:
+                from blockvault.core.inline_redactor import analyze_pdf_bytes
+                entities = analyze_pdf_bytes(
+                    decrypted_bytes,
+                    org_id=org_id,
+                    compliance_profile=compliance_profile,
+                )
+
+            try:
+                from blockvault.core.audit import log_event
+                log_event("entity_detection", target_id=canonical_id, user_id=owner, details={"count": len(entities)})
+            except Exception as exc:
+                logger.warning("Failed to log entity_detection event: %s", exc)
+
+            risk_report = _calculate_risk_score(entities)
+            if profile_name:
+                risk_report["profile_name"] = profile_name
+                detection_counts = {}
+                for entity in entities:
+                    entity_type = entity.get("entity_type", "UNKNOWN").upper()
+                    detection_counts[entity_type] = detection_counts.get(entity_type, 0) + 1
+                risk_report["detection_counts"] = detection_counts
+
+            try:
+                from blockvault.core.audit import log_event
+                log_event("risk_scan", target_id=canonical_id, user_id=owner, details={"risk_level": risk_report.get("risk_level")})
+                if profile_name:
+                    log_event(
+                        action="compliance_scan",
+                        user_id=owner,
+                        target_id=canonical_id,
+                        details={
+                            "profile_name": profile_name,
+                            "detection_counts": risk_report.get("detection_counts", {}),
+                            "total_detections": len(entities),
+                        },
+                    )
+            except Exception as exc:
+                logger.warning("Failed to log scan events: %s", exc)
+
+            coll.update_one(
+                {"_id": rec["_id"]},
+                {
+                    "$set": {
+                        "analysis_status": "complete",
+                        "analysis_result": {"entities": entities, "risk_report": risk_report},
+                        "risk_scan": risk_report
+                    }
+                }
+            )
+
+        except Exception as e:
+            logger.error("analyze_redaction_async_task failed: %s", e)
+            coll.update_one(
+                {"_id": rec["_id"]},
+                {
+                    "$set": {
+                        "analysis_status": "failed",
+                        "analysis_error": str(e)
+                    }
+                }
+            )

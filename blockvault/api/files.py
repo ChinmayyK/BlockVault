@@ -875,10 +875,10 @@ def _calculate_risk_score(entities: List[Dict[str, Any]]) -> Dict[str, Any]:
 
 
 def analyze_redaction(file_id: str):  # type: ignore
-    """Detect PII entities in a document.
-
-    Tries the external redactor microservice first (if configured and reachable),
-    then falls back to the inline regex+NER detector built into the backend.
+    """Detect PII entities in a document (async trigger/poll).
+    
+    If analysis is complete, returns the entities. Otherwise, starts a
+    background task and returns {"status": "pending"}.
     """
     ensure_role(Role.USER)
     rec, canonical_id = _lookup_file(file_id)
@@ -890,103 +890,44 @@ def analyze_redaction(file_id: str):  # type: ignore
     if not key:
         abort(400, "key required (form key= or X-File-Key header)")
 
-    decrypted_bytes = _decrypt_file_bytes(rec, key)
-    filename = rec.get("original_name", "document.bin")
+    # Check current status
+    status = rec.get("analysis_status")
+    
+    if status == "complete":
+        result = rec.get("analysis_result", {})
+        return {
+            "status": "complete",
+            "entities": result.get("entities", []),
+            "risk_report": result.get("risk_report", {})
+        }
+    elif status == "failed":
+        # Allow retry on failure
+        pass
+    elif status == "pending":
+        return {"status": "pending"}
 
-    # Get organization ID from request (if provided)
+    # Not started or failed -> start it
     org_id = request.form.get("org_id") or request.headers.get("X-Org-ID")
-
-    # Load compliance profile if org_id provided
-    compliance_profile = None
-    profile_name = None
-    if org_id:
-        try:
-            from ..core.organizations import OrganizationStore
-            from ..core.compliance_profiles import ComplianceProfileStore
-
-            org_store = OrganizationStore()
-            profile_name = org_store.get_compliance_profile(org_id)
-
-            if profile_name:
-                profile_store = ComplianceProfileStore()
-                compliance_profile = profile_store.get_profile_by_name(profile_name)
-        except Exception as exc:
-            current_app.logger.warning("Failed to load compliance profile: %s", exc)
-
-    # --- Strategy 1: try external redactor microservice ---
-    redactor_url = current_app.config.get("REDACTOR_SERVICE_URL")
-    entities = []
-    if redactor_url:
-        try:
-            resp = requests.post(
-                f"{redactor_url}/analyze",
-                files={"file": (filename, decrypted_bytes)},
-                timeout=30,
-            )
-            resp.raise_for_status()
-            current_app.logger.info("analyze-redaction: used external redactor service")
-            entities = resp.json().get("entities", [])
-        except requests.RequestException as exc:
-            current_app.logger.warning(
-                "External redactor unavailable (%s), falling back to inline detector", exc
-            )
-
-    # --- Strategy 2: inline detection (always available) ---
-    if not entities:
-        try:
-            from ..core.inline_redactor import analyze_pdf_bytes
-            entities = analyze_pdf_bytes(
-                decrypted_bytes,
-                org_id=org_id,
-                compliance_profile=compliance_profile,
-            )
-            current_app.logger.info(
-                "analyze-redaction: inline detector found %d entities", len(entities)
-            )
-        except ImportError as exc:
-            current_app.logger.error("Inline redactor import failed: %s", exc)
-            abort(503, "redaction analysis unavailable (install PyMuPDF)")
-        except Exception as exc:
-            current_app.logger.error("Inline analysis failed: %s", exc, exc_info=True)
-            abort(500, f"analysis failed: {exc}")
-
-    # --- Global Risk Calculation ---
-    risk_report = _calculate_risk_score(entities)
-
-    # Add compliance profile information to risk report
-    if profile_name:
-        risk_report["profile_name"] = profile_name
-        # Calculate detection counts by entity type
-        detection_counts = {}
-        for entity in entities:
-            entity_type = entity.get("entity_type", "UNKNOWN").upper()
-            detection_counts[entity_type] = detection_counts.get(entity_type, 0) + 1
-        risk_report["detection_counts"] = detection_counts
-
-    # Store the risk scan metadata
+    
+    # Mark as pending immediately
     get_db().files.update_one(
-        {"_id": canonical_id},
-        {"$set": {"risk_scan": risk_report}}
+        {"_id": rec["_id"]},
+        {"$set": {"analysis_status": "pending", "analysis_error": None}}
     )
-
-    # Log compliance scan event if profile active
-    if profile_name:
-        try:
-            from ..core.audit import log_event
-            log_event(
-                action="compliance_scan",
-                user_id=owner,
-                target_id=canonical_id,
-                details={
-                    "profile_name": profile_name,
-                    "detection_counts": risk_report.get("detection_counts", {}),
-                    "total_detections": len(entities),
-                },
-            )
-        except Exception as exc:
-            current_app.logger.warning("Failed to log compliance scan event: %s", exc)
-
-    return {"entities": entities, "risk_report": risk_report}
+    
+    # Trigger Celery task
+    try:
+        from ..core.tasks import analyze_redaction_async_task
+        analyze_redaction_async_task.delay(canonical_id, key, org_id, owner, canonical_id)
+    except Exception as exc:
+        current_app.logger.warning("Failed to enqueue analyze_redaction task: %s", exc)
+        get_db().files.update_one(
+            {"_id": rec["_id"]},
+            {"$set": {"analysis_status": "failed", "analysis_error": str(exc)}}
+        )
+        return {"status": "failed", "error": "Could not queue background task"}
+        
+    return {"status": "pending"}
 
 
 @bp.post("/<file_id>/search-redaction", strict_slashes=False)
@@ -1890,3 +1831,104 @@ def reset_passphrase(file_id: str):  # type: ignore
     except Exception as e:
         current_app.logger.error(f"Passphrase reset error: {e}")
         abort(500, "internal error during passphrase reset")
+
+@bp.get("/<file_id>/activity", strict_slashes=False)
+@require_auth
+def get_file_activity(file_id: str):
+    """Return activity timeline events for a file, fetched from audit log."""
+    ensure_role(Role.USER)
+    rec, canonical_id = _lookup_file(file_id)
+    requester = getattr(request, "address").lower()
+    
+    if rec.get("owner") != requester:
+        share = _shares_collection().find_one({"file_id": canonical_id, "recipient": requester})
+        if not share:
+            abort(404, "file not found")
+
+    from ..core.db import get_db
+    import datetime
+    
+    # Synthetic "encrypt" event to match upload, as requested by UX
+    events = []
+    
+    # Get standard uploads
+    audit_cursor = get_db()["audit_events"].find({"target_id": canonical_id}).sort("timestamp", 1)
+    
+    type_mapping = {
+        "upload": {"type": "upload", "action": "Document Uploaded", "desc": "File uploaded and stored securely."},
+        "risk_scan": {"type": "scan", "action": "Risk Scan Completed", "desc": "Risk scan finished."},
+        "compliance_scan": {"type": "compliance", "action": "Compliance Policy Applied", "desc": "Policy enforced."},
+        "entity_detection": {"type": "detect", "action": "Sensitive Data Detected", "desc": "PII / Sensitive data found."},
+        "redact_review": {"type": "redact_review", "action": "Redaction Review", "desc": "Document awaiting manual review."},
+        "redaction": {"type": "redact", "action": "Redactions Applied", "desc": "Redactions successfully applied."},
+        "proof_generation": {"type": "proof", "action": "ZK Proof Generated", "desc": "Zero-knowledge proof generated and verified."},
+        "blockchain_anchor": {"type": "anchor", "action": "Blockchain Anchor", "desc": "Document hash permanently anchored on-chain."},
+        "share": {"type": "share", "action": "Document Shared", "desc": "Access granted to another user."},
+        "download": {"type": "download", "action": "Document Downloaded", "desc": "File downloaded."}
+    }
+    
+    has_upload = False
+    
+    for i, evt in enumerate(audit_cursor):
+        action = evt.get("action")
+        if action not in type_mapping:
+            continue
+            
+        mapping = type_mapping[action]
+        details = evt.get("details", {})
+        
+        ts = evt.get("timestamp", 0)
+        ts_iso = datetime.datetime.fromtimestamp(ts/1000.0, tz=datetime.timezone.utc).isoformat()
+             
+        mapped_evt = {
+            "id": str(evt.get("_id") or i),
+            "type": mapping["type"],
+            "action": mapping["action"],
+            "description": mapping["desc"],
+            "timestamp": ts_iso,
+            "status": "success",
+            "actor": evt.get("user_id"),
+            "metadata": {}
+        }
+        
+        # Specialized formatting based on event
+        if action == "upload":
+            has_upload = True
+            
+        if action == "entity_detection" and "count" in details:
+            mapped_evt["metadata"]["Entities Found"] = str(details["count"])
+        elif action == "risk_scan" and "risk_level" in details:
+            mapped_evt["metadata"]["Risk Level"] = details["risk_level"]
+            if details["risk_level"] in ("High", "Critical"):
+                mapped_evt["status"] = "failed" # visual red styling
+        elif action == "blockchain_anchor" and "tx" in details:
+            mapped_evt["metadata"]["Transaction"] = str(details["tx"])
+            mapped_evt["actionLabel"] = "View transaction"
+            mapped_evt["actionType"] = "view_tx"
+        elif action == "proof_generation":
+            mapped_evt["actionLabel"] = "View proof details"
+            mapped_evt["actionType"] = "view_proof"
+            if "tx" in details and details["tx"]:
+                mapped_evt["metadata"]["Anchored"] = "True"
+        elif action == "compliance_scan" and "profile_name" in details:
+            mapped_evt["description"] = f"{details['profile_name']} compliance profile enforced."
+            
+        events.append(mapped_evt)
+        
+        # Inject "Encrypt" event directly after upload to satisfy UX
+        if action == "upload":
+            encrypt_ts_iso = datetime.datetime.fromtimestamp((ts + 1200)/1000.0, tz=datetime.timezone.utc).isoformat()
+            events.append({
+                "id": str(evt.get("_id")) + "_enc",
+                "type": "encrypt",
+                "action": "Encrypted via AES-256-GCM",
+                "description": "Client-side and Server-side encryption applied.",
+                "timestamp": encrypt_ts_iso,
+                "status": "success",
+                "actor": evt.get("user_id"),
+                "metadata": {}
+            })
+            
+    return events
+
+

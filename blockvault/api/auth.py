@@ -190,12 +190,45 @@ def login():
     # Invalidate used nonce
     _nonce_collection().delete_one({"address": address})
 
+    from ..core.roles import parse_platform_role
+    from ..core.permissions import _get_platform_role
+
+    platform_role = _get_platform_role(address)
     token = generate_jwt({"sub": address})
 
     from ..core.audit import log_event
     log_event("login", details={"address": address})
 
-    response = {"token": token, "address": address}
+    # Auto-create personal vault workspace on login
+    try:
+        from ..core.workspaces import WorkspaceStore
+        ws_store = WorkspaceStore()
+        ws_store.ensure_personal_vault(address)
+    except Exception as e:
+        current_app.logger.warning("Failed to ensure personal vault: %s", e)
+
+    # Fetch org and workspace memberships for the response
+    orgs = []
+    workspaces = []
+    try:
+        from ..core.organizations import OrganizationStore
+        from ..core.workspaces import WorkspaceStore
+        org_store = OrganizationStore()
+        ws_store = WorkspaceStore()
+        orgs = org_store.get_user_orgs(address)
+        workspaces = ws_store.get_user_workspaces(address)
+    except Exception as e:
+        current_app.logger.warning("Failed to load role context: %s", e)
+
+    response = {
+        "token": token,
+        "address": address,
+        "platform_role": platform_role.value,
+        # Legacy field for backward compatibility
+        "role": platform_role.value,
+        "organizations": orgs,
+        "workspaces": workspaces,
+    }
     
     # Return RSA keys to frontend for local storage (only on first generation or retrieval)
     if rsa_private_key and rsa_public_key:

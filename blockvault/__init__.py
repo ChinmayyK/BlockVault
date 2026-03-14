@@ -23,6 +23,7 @@ from .api.files import bp as files_bp
 from .api.users import bp as users_bp
 from .api.settings import bp as settings_bp
 from .api.blockchain import bp as blockchain_bp
+from .api.demo import bp as demo_bp
 
 
 # ---------------------------------------------------------------------------
@@ -223,9 +224,16 @@ def create_app() -> Flask:
     app.register_blueprint(users_bp, url_prefix="/users")
     app.register_blueprint(settings_bp, url_prefix="/settings")
     app.register_blueprint(blockchain_bp, url_prefix="/blockchain")
+    app.register_blueprint(demo_bp, url_prefix="/demo")
 
     from .api.compliance import bp as compliance_bp
     app.register_blueprint(compliance_bp, url_prefix="/compliance")
+
+    from .api.organizations import bp as organizations_bp
+    app.register_blueprint(organizations_bp, url_prefix="/organizations")
+
+    from .api.workspaces import bp as workspaces_bp
+    app.register_blueprint(workspaces_bp, url_prefix="/workspaces")
 
     from .mock_cases import register_case_routes
     register_case_routes(app)

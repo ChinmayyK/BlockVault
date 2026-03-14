@@ -20,7 +20,8 @@ ipfshttpclient==0.8.0a2
 
 # Cryptography
 cryptography==41.0.7
-pycryptodome==3.19.0
+pycryptodome>=3.21.0
+eciespy>=0.4.0
 
 # JWT Authentication
 PyJWT==2.8.0
@@ -44,6 +45,7 @@ marshmallow==3.20.1
 
 # Password Hashing
 bcrypt==4.1.2
+argon2-cffi>=21.0.0
 
 # CORS Support
 flask-cors==4.0.0

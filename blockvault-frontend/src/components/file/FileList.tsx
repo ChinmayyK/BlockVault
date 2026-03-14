@@ -12,6 +12,7 @@ import {
   Loader2,
   Shield,
   Search,
+  Eraser,
 } from 'lucide-react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useFiles } from '@/contexts/FileContext';
@@ -38,6 +39,7 @@ interface FileListProps {
   onLoadMore?: () => void;
   isLoadingMore?: boolean;
   workspaceContext?: string;
+  onFileSelect?: (file: any) => void;
 }
 
 export const FileList: React.FC<FileListProps> = React.memo(({
@@ -50,6 +52,7 @@ export const FileList: React.FC<FileListProps> = React.memo(({
   onLoadMore,
   isLoadingMore = false,
   workspaceContext,
+  onFileSelect,
 }) => {
   const { downloadFile, deleteFile, revokeShare } = useFiles();
   const { user } = useAuth();
@@ -61,7 +64,6 @@ export const FileList: React.FC<FileListProps> = React.memo(({
   const [showPassphraseModal, setShowPassphraseModal] = useState(false);
   const [proofStatusById, setProofStatusById] = useState<Record<string, 'verified' | 'missing' | 'pending' | 'failed'>>({});
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedDetailsFile, setSelectedDetailsFile] = useState<any>(null);
 
   const parentRef = useRef<HTMLDivElement>(null);
   const selectionContainerRef = useRef<HTMLDivElement | null>(null);
@@ -121,12 +123,12 @@ export const FileList: React.FC<FileListProps> = React.memo(({
           // Find the file and open details panel
           const clickedFile = (files || []).find(f => (f.file_id || f.id || f._id) === id) 
                            || (shares || []).find(s => (s.share_id || s.id) === id);
-          if (clickedFile) {
-              setSelectedDetailsFile(clickedFile);
+          if (clickedFile && onFileSelect) {
+              onFileSelect(clickedFile);
           }
       }
     },
-    [files, shares],
+    [files, shares, onFileSelect],
   );
 
   const openFileContextMenuAtPosition = useCallback(
@@ -773,7 +775,7 @@ export const FileList: React.FC<FileListProps> = React.memo(({
                   hasProof={proofStatus === 'verified'}
                   isShared={false}
                   onDownload={() => handleDownload(fileId, file)}
-                  onRedact={() => navigate(`/redact/${fileId}`)}
+                  onRedact={() => navigate(user?.address === 'demo_user' ? `/demo/redact/${fileId}` : `/redact/${fileId}`)}
                   onShare={() => onShare && onShare(fileId)}
                   onVerify={() => {}} // Could dispatch a proof verification manually if needed
                   onDelete={() => handleDelete(fileId)}
@@ -795,12 +797,12 @@ export const FileList: React.FC<FileListProps> = React.memo(({
           </div>
 
           {/* Quick Actions */}
-          <div className="flex items-center gap-2 mt-5 pt-4 border-t border-border/60">
+          <div className="grid grid-cols-2 gap-2 mt-5 pt-4 border-t border-border/40">
             <Button
               onClick={() => handleDownload(fileId, file)}
-              variant="outline"
+              variant="ghost"
               size="sm"
-              className="flex-1 gap-2 text-xs transition-transform hover:-translate-y-0.5 active:translate-y-0 hover:bg-primary/10 hover:border-primary/50"
+              className="flex items-center justify-center gap-1.5 text-xs bg-muted/40 hover:bg-muted text-muted-foreground hover:text-foreground transition-all rounded-md h-8"
             >
               <Download className="w-3.5 h-3.5" />
               Download
@@ -808,23 +810,34 @@ export const FileList: React.FC<FileListProps> = React.memo(({
             {type === 'my-files' && onShare && canShare(user?.role) && (
               <Button
                 onClick={() => onShare(fileId)}
-                variant="outline"
+                variant="ghost"
                 size="sm"
-                className="flex-1 gap-2 text-xs transition-transform hover:-translate-y-0.5 active:translate-y-0 hover:bg-accent hover:text-foreground"
+                className="flex items-center justify-center gap-1.5 text-xs bg-muted/40 hover:bg-muted text-muted-foreground hover:text-foreground transition-all rounded-md h-8"
               >
                 <Share2 className="w-3.5 h-3.5" />
                 Share
               </Button>
             )}
+            {type === 'my-files' && canRedact(user?.role) && fileName.toLowerCase().endsWith('.pdf') && (
+              <Button
+                onClick={() => navigate(user?.address === 'demo_user' ? `/demo/redact/${fileId}` : `/redact/${fileId}`)}
+                variant="ghost"
+                size="sm"
+                className="flex items-center justify-center gap-1.5 text-xs bg-primary/10 hover:bg-primary/20 text-primary transition-all rounded-md h-8 col-span-2"
+              >
+                <Eraser className="w-3.5 h-3.5" />
+                Redact Document
+              </Button>
+            )}
             {type === 'shared' && canRevokeShare(user?.role) && (
               <Button
                 onClick={() => handleRevokeShare(file.share_id || file.id)}
-                variant="outline"
+                variant="ghost"
                 size="sm"
-                className="flex-1 gap-2 text-xs transition-transform hover:-translate-y-0.5 active:translate-y-0 hover:bg-destructive/10 hover:border-destructive/50 text-destructive"
+                className="flex items-center justify-center gap-1.5 text-xs bg-destructive/10 hover:bg-destructive/20 text-destructive transition-all rounded-md h-8 col-span-2"
               >
                 <Trash2 className="w-3.5 h-3.5" />
-                Remove
+                Revoke Access
               </Button>
             )}
           </div>
@@ -1157,8 +1170,10 @@ export const FileList: React.FC<FileListProps> = React.memo(({
                       width: '100%',
                       height: `${virtualItem.size}px`,
                       transform: `translateY(${virtualItem.start}px)`,
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
+                      gap: '1.5rem'
                     }}
-                    className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6"
                   >
                     {rowItems.map((file, idx) => renderFileCard(file, startIdx + idx))}
                   </div>
@@ -1188,7 +1203,14 @@ export const FileList: React.FC<FileListProps> = React.memo(({
           </div>
         </div>
       ) : (
-        <div className={`grid gap-6 ${viewMode === 'grid' ? 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4' : 'grid-cols-1'}`}>
+        <div 
+          style={{ 
+            display: viewMode === 'grid' ? 'grid' : 'block',
+            gridTemplateColumns: viewMode === 'grid' ? 'repeat(auto-fill, minmax(260px, 1fr))' : undefined,
+            gap: viewMode === 'grid' ? '1.5rem' : '1.5rem'
+          }}
+          className={viewMode === 'list' ? 'space-y-6' : ''}
+        >
           {itemsToRender.map((file, index) => renderFileCard(file, index))}
         </div>
       )}
@@ -1243,14 +1265,6 @@ export const FileList: React.FC<FileListProps> = React.memo(({
         confirmText="Confirm"
       />
       </div>
-
-      {selectedDetailsFile && (
-          <FileDetailsPanel 
-              file={selectedDetailsFile} 
-              onClose={() => setSelectedDetailsFile(null)} 
-          />
-      )}
     </div>
   );
 });
-

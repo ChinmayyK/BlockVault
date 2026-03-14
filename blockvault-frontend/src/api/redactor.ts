@@ -12,11 +12,25 @@ export const analyzeRedaction = async (
     const formData = new FormData();
     formData.append("key", passphrase);
 
-    const response = await apiClient.post(`/files/${fileId}/analyze-redaction`, formData, {
+    let response = await apiClient.post(`/files/${fileId}/analyze-redaction`, formData, {
         headers: {
             "Content-Type": "multipart/form-data",
         },
     });
+
+    if (response.data.status === "pending" || !response.data.entities) {
+        while (true) {
+            await new Promise((resolve) => setTimeout(resolve, 3000));
+            response = await apiClient.post(`/files/${fileId}/analyze-redaction`, formData, {
+                headers: { "Content-Type": "multipart/form-data" },
+            });
+            if (response.data.status === "complete") {
+                return response.data as AnalyzeResponse;
+            } else if (response.data.status === "failed") {
+                throw new Error("Analysis failed: " + (response.data.error || "Unknown Error"));
+            }
+        }
+    }
 
     return response.data as AnalyzeResponse;
 };

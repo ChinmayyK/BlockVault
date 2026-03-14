@@ -12,9 +12,10 @@ export function RiskScanPanel({ report, onStartRedaction }: RiskScanPanelProps) 
     const isLow = report.risk_level === "Low";
 
     const getTheme = () => {
-        if (isCritical) return "from-red-500/10 to-transparent border-red-500/20 text-red-500 ring-red-500/50 bg-red-500/20";
-        if (isMedium) return "from-amber-500/10 to-transparent border-amber-500/20 text-amber-500 ring-amber-500/50 bg-amber-500/20";
-        return "from-emerald-500/10 to-transparent border-emerald-500/20 text-emerald-500 ring-emerald-500/50 bg-emerald-500/20";
+        if (report.risk_level === "Critical") return "from-rose-500/10 to-transparent border-rose-500/30 text-rose-500 ring-rose-500/50 bg-rose-500/20";
+        if (report.risk_level === "High") return "from-orange-500/10 to-transparent border-orange-500/30 text-orange-500 ring-orange-500/50 bg-orange-500/20";
+        if (report.risk_level === "Medium") return "from-amber-500/10 to-transparent border-amber-500/30 text-amber-500 ring-amber-500/50 bg-amber-500/20";
+        return "from-emerald-500/10 to-transparent border-emerald-500/30 text-emerald-500 ring-emerald-500/50 bg-emerald-500/20";
     };
 
     const handleDownloadReport = () => {
@@ -29,6 +30,32 @@ export function RiskScanPanel({ report, onStartRedaction }: RiskScanPanelProps) 
 
     const themeStr = getTheme();
     const [gradient, , border, textColor, ring, badgeBg] = themeStr.split(" ");
+    
+    // Group entities by category
+    const CATEGORY_MAP: Record<string, string> = {
+        AADHAAR: 'Government ID',
+        PAN: 'Government ID',
+        US_SSN: 'Government ID',
+        US_PASSPORT: 'Government ID',
+        UK_NHS: 'Government ID',
+        CREDIT_CARD: 'Financial',
+        IBAN_CODE: 'Financial',
+        CRYPTO: 'Financial',
+        EMAIL_ADDRESS: 'Personal (PII)',
+        PHONE_NUMBER: 'Personal (PII)',
+        PERSON: 'Personal (PII)',
+        LOCATION: 'Personal (PII)',
+        DATE_TIME: 'Personal (PII)',
+        URL: 'Technical',
+        IP_ADDRESS: 'Technical',
+    };
+    
+    const groupedEntities = Object.entries(report.entities).reduce((acc, [type, count]) => {
+        const category = CATEGORY_MAP[type] || 'Other Identifiers';
+        if (!acc[category]) acc[category] = [];
+        acc[category].push({ type, count });
+        return acc;
+    }, {} as Record<string, Array<{ type: string; count: number }>>);
 
     return (
         <div className="w-full h-full flex flex-col items-center justify-center p-8 bg-slate-950/50 backdrop-blur-sm">
@@ -36,7 +63,7 @@ export function RiskScanPanel({ report, onStartRedaction }: RiskScanPanelProps) 
                 {/* Header Section */}
                 <div className={`p-8 border-b ${border} bg-gradient-to-br ${gradient} relative overflow-hidden`}>
                     <div className="absolute top-0 right-0 p-8 opacity-20">
-                        {isCritical ? <ShieldAlert className={`w-32 h-32 ${textColor}`} /> : <ShieldCheck className={`w-32 h-32 ${textColor}`} />}
+                        {report.risk_level === "Critical" || report.risk_level === "High" ? <ShieldAlert className={`w-32 h-32 ${textColor}`} /> : <ShieldCheck className={`w-32 h-32 ${textColor}`} />}
                     </div>
                     
                     <div className="relative z-10">
@@ -73,11 +100,18 @@ export function RiskScanPanel({ report, onStartRedaction }: RiskScanPanelProps) 
                     <div>
                          <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-4">Sensitive Data Detected</h3>
                          {Object.keys(report.entities).length > 0 ? (
-                             <div className="grid grid-cols-2 gap-3">
-                                 {Object.entries(report.entities).map(([type, count]) => (
-                                     <div key={type} className="flex items-center justify-between p-3 bg-slate-800/30 rounded-lg border border-slate-800">
-                                         <span className="text-sm font-medium text-slate-300">{type.replace(/_/g, " ")}</span>
-                                         <span className={`text-xs font-bold px-2 py-0.5 rounded bg-slate-800 text-slate-100`}>{count}</span>
+                             <div className="space-y-4">
+                                 {Object.entries(groupedEntities).map(([category, items]) => (
+                                     <div key={category} className="space-y-2">
+                                         <h4 className="text-xs font-medium text-slate-500 uppercase tracking-widest">{category}</h4>
+                                         <div className="grid grid-cols-2 gap-3">
+                                             {items.map(({ type, count }) => (
+                                                 <div key={type} className="flex items-center justify-between p-3 bg-slate-800/30 rounded-lg border border-slate-800">
+                                                     <span className="text-sm font-medium text-slate-300">{type.replace(/_/g, " ")}</span>
+                                                     <span className={`text-xs font-bold px-2 py-0.5 rounded bg-slate-800 text-slate-100`}>{count}</span>
+                                                 </div>
+                                             ))}
+                                         </div>
                                      </div>
                                  ))}
                              </div>

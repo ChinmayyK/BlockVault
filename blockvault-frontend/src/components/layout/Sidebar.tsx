@@ -1,5 +1,5 @@
 import { NavLink } from "react-router-dom";
-import { FileText, Scale, Briefcase, Link2, Settings, Menu, X, LogOut, Pin, PinOff } from "lucide-react";
+import { FileText, Scale, Briefcase, Link2, Settings, Menu, X, LogOut, Pin, PinOff, BarChart3, CreditCard } from "lucide-react";
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
@@ -7,7 +7,9 @@ import { Button } from "@/components/ui/button";
 
 const navigation = [
   { name: "Personal Vault", href: "/files", icon: FileText },
+  { name: "Analytics", href: "/analytics", icon: BarChart3 },
   { name: "Organizations", href: "/orgs", icon: Briefcase },
+  { name: "Billing", href: "/billing", icon: CreditCard },
   { name: "Settings", href: "/settings", icon: Settings },
 ];
 

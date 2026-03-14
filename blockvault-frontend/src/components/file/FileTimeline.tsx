@@ -15,6 +15,7 @@ import {
   Clock,
   XCircle,
   Loader2,
+  ExternalLink,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
@@ -29,6 +30,8 @@ import type { TimelineEvent, TimelineEventType } from '@/types/timeline';
 interface FileTimelineProps {
   events: TimelineEvent[];
   loading?: boolean;
+  /** Called when an event action button is clicked */
+  onAction?: (actionType: string, event: TimelineEvent) => void;
 }
 
 /* ------------------------------------------------------------------ */
@@ -163,7 +166,7 @@ const MetadataRow: React.FC<{ label: string; value: string }> = ({ label, value 
 /*  Main Component                                                     */
 /* ------------------------------------------------------------------ */
 
-export const FileTimeline: React.FC<FileTimelineProps> = ({ events, loading = false }) => {
+export const FileTimeline: React.FC<FileTimelineProps> = ({ events, loading = false, onAction }) => {
   if (loading) return <TimelineSkeleton />;
 
   if (!events || events.length === 0) return <TimelineEmpty />;
@@ -172,7 +175,7 @@ export const FileTimeline: React.FC<FileTimelineProps> = ({ events, loading = fa
   if (events.length === 1 && events[0].type === 'upload') {
     return (
       <>
-        <TimelineEventRow event={events[0]} index={0} isLast />
+        <TimelineEventRow event={events[0]} index={0} isLast onAction={onAction} />
         <div className="mt-4">
           <p className="text-xs text-muted-foreground/60 text-center italic">
             This document has no additional activity yet.
@@ -208,6 +211,7 @@ export const FileTimeline: React.FC<FileTimelineProps> = ({ events, loading = fa
             event={event}
             index={index}
             isLast={index === sorted.length - 1}
+            onAction={onAction}
           />
         ))}
       </ol>
@@ -223,9 +227,10 @@ interface TimelineEventRowProps {
   event: TimelineEvent;
   index: number;
   isLast: boolean;
+  onAction?: (actionType: string, event: TimelineEvent) => void;
 }
 
-const TimelineEventRow: React.FC<TimelineEventRowProps> = ({ event, index, isLast }) => {
+const TimelineEventRow: React.FC<TimelineEventRowProps> = ({ event, index, isLast, onAction }) => {
   const style = getStyle(event.type, event.status);
   const metaEntries = event.metadata ? Object.entries(event.metadata).filter(([, v]) => v) : [];
 
@@ -300,6 +305,27 @@ const TimelineEventRow: React.FC<TimelineEventRowProps> = ({ event, index, isLas
               <MetadataRow key={key} label={key} value={value} />
             ))}
           </div>
+        )}
+
+        {/* Action button */}
+        {event.actionLabel && event.actionType && event.status === 'success' && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onAction?.(event.actionType!, event);
+            }}
+            className={cn(
+              'mt-2 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[10px] font-semibold',
+              'border border-border/60 bg-muted/30 text-muted-foreground',
+              'hover:bg-accent-blue/10 hover:text-accent-blue hover:border-accent-blue/30',
+              'transition-all duration-200 cursor-pointer',
+              'timeline-action-btn'
+            )}
+          >
+            <ExternalLink className="w-2.5 h-2.5" />
+            {event.actionLabel}
+          </button>
         )}
 
         {/* Timestamp + Actor */}

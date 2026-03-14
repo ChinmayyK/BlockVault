@@ -249,6 +249,41 @@ All colors MUST be HSL.
   .timeline-event-enter {
     animation: timeline-fade-in 0.35s ease-out both;
   }
+
+  /* Score ring SVG subtle pulse */
+  @keyframes score-ring-pulse {
+    0%, 100% { filter: drop-shadow(0 0 6px currentColor); }
+    50% { filter: drop-shadow(0 0 14px currentColor); }
+  }
+
+  .score-ring-svg {
+    animation: score-ring-pulse 3s ease-in-out infinite;
+  }
+
+  /* Heatmap overlay glow */
+  @keyframes heatmap-glow {
+    0%, 100% { opacity: 0.55; }
+    50% { opacity: 0.75; }
+  }
+
+  .heatmap-glow {
+    animation: heatmap-glow 2s ease-in-out infinite;
+  }
+
+  /* Timeline action button hover glow */
+  .timeline-action-btn:hover {
+    box-shadow: 0 0 12px hsl(var(--accent-blue-glow));
+  }
+
+  /* Bar chart grow animation */
+  @keyframes chart-bar-grow {
+    from { height: 4px; opacity: 0; }
+    to { opacity: 1; }
+  }
+
+  .usage-bar-fill {
+    animation: chart-bar-grow 1s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
 }
 
 @layer components {

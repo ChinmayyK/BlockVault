@@ -16,6 +16,8 @@ const LoginPage = lazy(() =>
   import("./components/auth/LoginPage").then((mod) => ({ default: mod.LoginPage }))
 );
 const DashboardPage = lazy(() => import("./pages/DashboardPage"));
+const AnalyticsDashboard = lazy(() => import("./pages/AnalyticsDashboard"));
+const BillingPage = lazy(() => import("./pages/BillingPage"));
 const LegalPage = lazy(() => import("./pages/LegalPage"));
 const CasesPage = lazy(() => import("./pages/CasesPage"));
 const BlockchainPage = lazy(() => import("./pages/BlockchainPage"));
@@ -125,6 +127,22 @@ const App = () => {
                             element={
                               <ProtectedRoute>
                                 <MainLayout><DashboardPage /></MainLayout>
+                              </ProtectedRoute>
+                            }
+                          />
+                          <Route
+                            path="/analytics"
+                            element={
+                              <ProtectedRoute>
+                                <MainLayout><AnalyticsDashboard /></MainLayout>
+                              </ProtectedRoute>
+                            }
+                          />
+                          <Route
+                            path="/billing"
+                            element={
+                              <ProtectedRoute>
+                                <MainLayout><BillingPage /></MainLayout>
                               </ProtectedRoute>
                             }
                           />

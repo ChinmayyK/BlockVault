@@ -8,6 +8,8 @@ export const ROUTES = {
   HOME: '/',
   DASHBOARD: '/dashboard',
   FILES: '/files',
+  ANALYTICS: '/analytics',
+  BILLING: '/billing',
   LEGAL: '/legal',
   CASES: '/cases',
   BLOCKCHAIN: '/blockchain',

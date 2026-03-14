@@ -129,7 +129,16 @@ function generateMockTimeline(file: any) {
   const events: any[] = [];
   let seq = 0;
 
-  const push = (offsetMs: number, type: string, action: string, description: string, status = 'success', metadata?: Record<string, string>) => {
+  const push = (
+    offsetMs: number,
+    type: string,
+    action: string,
+    description: string,
+    status = 'success',
+    metadata?: Record<string, string>,
+    actionLabel?: string,
+    actionType?: string,
+  ) => {
     events.push({
       id: String(++seq),
       type,
@@ -141,6 +150,8 @@ function generateMockTimeline(file: any) {
         ? (file.user_address ? `${file.user_address.substring(0, 6)}...${file.user_address.substring(38)}` : undefined)
         : undefined,
       metadata,
+      actionLabel,
+      actionType,
     });
   };
 
@@ -162,19 +173,19 @@ function generateMockTimeline(file: any) {
     const count = file.metadata?.redaction_count || '12';
     push(60000, 'redact', 'Redactions Applied', `${count} sensitive entities permanently removed from document.`, 'success', {
       redactions: `${count} redactions applied`,
-    });
+    }, 'View redaction report', 'view_report');
   }
 
   if (file.proof_status === 'verified' || file.metadata?.proof_cid) {
     push(65000, 'proof', 'ZK Proof Generated', 'Zero-knowledge proof of correct redaction generated and verified.', 'success', {
       proof_cid: file.metadata?.proof_cid || undefined,
-    });
+    }, 'View proof details', 'view_proof');
   }
 
   if (file.tx_hash) {
     push(72000, 'anchor', 'Blockchain Anchor', 'Document hash permanently anchored on-chain.', 'success', {
       transaction: file.tx_hash,
-    });
+    }, 'View transaction', 'view_tx');
   }
 
   if (file.metadata?.compliance_profile) {
@@ -184,7 +195,7 @@ function generateMockTimeline(file: any) {
   if (file.metadata?.certificate_id || file.proof_status === 'verified') {
     push(78000, 'certificate', 'Security Certificate Generated', 'Tamper-proof compliance certificate issued.', 'success', {
       certificate_id: file.metadata?.certificate_id || `cert-${file.id?.substring(0, 4) || '0000'}`,
-    });
+    }, 'Open certificate', 'open_certificate');
   }
 
   return events;

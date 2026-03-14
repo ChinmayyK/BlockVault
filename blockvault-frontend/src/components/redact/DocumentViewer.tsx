@@ -1,8 +1,10 @@
 import { useRef, useState, useEffect, MouseEvent, useMemo } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
 import { Rnd } from "react-rnd";
-import { ZoomIn, ZoomOut, Maximize, Minimize } from "lucide-react";
+import { ZoomIn, ZoomOut, Maximize, Minimize, Eye } from "lucide-react";
 import { RedactEntity, ManualRect, SearchMatch } from "../../types/redactor";
+import { Switch } from "@/components/ui/switch";
+import { HeatmapLegend } from "@/components/file/HeatmapLegend";
 
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 import 'react-pdf/dist/Page/TextLayer.css';
@@ -375,6 +377,10 @@ export function DocumentViewer({
     const [scale, setScale] = useState<number>(1.2);
     const containerRef = useRef<HTMLDivElement>(null);
 
+    // Internal heatmap state — prop overrides if provided
+    const [internalHeatmap, setInternalHeatmap] = useState(heatmapMode ?? false);
+    const isHeatmapActive = heatmapMode ?? internalHeatmap;
+
 
 
 
@@ -446,6 +452,22 @@ export function DocumentViewer({
                     >
                         <Minimize className="w-4 h-4" />
                     </button>
+
+                    <div className="h-4 w-px bg-border mx-1"></div>
+
+                    {/* Heatmap toggle */}
+                    <div className="flex items-center gap-2">
+                        <Eye className="w-3.5 h-3.5 text-muted-foreground" />
+                        <label htmlFor="heatmap-toggle" className="text-xs text-muted-foreground font-medium cursor-pointer select-none whitespace-nowrap">
+                            Sensitivity Heatmap
+                        </label>
+                        <Switch
+                            id="heatmap-toggle"
+                            checked={isHeatmapActive}
+                            onCheckedChange={(checked) => setInternalHeatmap(checked)}
+                            className="scale-75"
+                        />
+                    </div>
                 </div>
             </div>
 
@@ -504,11 +526,14 @@ export function DocumentViewer({
                                     onHoverEntity={onHoverEntity}
                                     reviewMode={reviewMode}
                                     currentReviewEntityId={currentReviewEntityId}
-                                    heatmapMode={heatmapMode}
+                                    heatmapMode={isHeatmapActive}
                                 />
                             );
                         })}
                     </Document>
+
+                    {/* Heatmap Legend */}
+                    <HeatmapLegend visible={isHeatmapActive} />
                 </div>
             </div>
         </div>

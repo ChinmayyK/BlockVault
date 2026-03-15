@@ -114,7 +114,7 @@ export const FileDetailsPanel: React.FC<FileDetailsPanelProps> = ({ file, onClos
     const pipelinePercent = Math.round((completedSteps / pipelineSteps.length) * 100);
 
     return (
-        <div className="h-full flex flex-col bg-transparent animate-in fade-in slide-in-from-right-8 duration-300">
+        <div className="h-full flex flex-col bg-card rounded-xl border border-border animate-in fade-in slide-in-from-right-8 duration-300 overflow-hidden">
             {/* Header */}
             <div className="flex items-center justify-between p-4 border-b bg-muted/10">
                 <h2 className="font-semibold flex items-center gap-2 text-foreground text-sm">

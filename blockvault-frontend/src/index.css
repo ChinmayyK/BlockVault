@@ -8,25 +8,25 @@ All colors MUST be HSL.
 
 @layer base {
   :root {
-    --background: 0 0% 0%;
+    --background: 0 0% 4%; /* #0a0a0a */
     --foreground: 0 0% 100%;
 
-    --card: 0 0% 17%;
+    --card: 0 0% 8%; /* #141414 */
     --card-foreground: 0 0% 100%;
 
-    --popover: 0 0% 17%;
+    --popover: 0 0% 8%;
     --popover-foreground: 0 0% 100%;
 
     --primary: 0 0% 100%;
     --primary-foreground: 0 0% 0%;
 
-    --secondary: 0 0% 24%;
+    --secondary: 0 0% 12%;
     --secondary-foreground: 0 0% 100%;
 
-    --muted: 0 0% 24%;
-    --muted-foreground: 0 0% 69%;
+    --muted: 0 0% 12%;
+    --muted-foreground: 0 0% 70%;
 
-    --accent: 0 0% 24%;
+    --accent: 0 0% 12%;
     --accent-foreground: 0 0% 100%;
 
     --destructive: 0 84% 60%;
@@ -39,75 +39,79 @@ All colors MUST be HSL.
     --accent-blue: 217 91% 60%;
     --accent-blue-glow: 217 91% 60% / 0.5;
     
-    --card-muted: 0 0% 17%;
+    --card-muted: 0 0% 8%;
     --card-muted-foreground: 0 0% 100%;
     --border-accent: 217 91% 60%;
 
-    --border: 0 0% 24%;
-    --input: 0 0% 20%;
+    --border: 0 0% 14%;
+    --input: 0 0% 12%;
     --ring: 0 0% 30%;
 
-    --radius: 0.5rem;
+    --radius: 0.75rem;
 
-    --sidebar-background: 0 0% 12%;
+    --sidebar-background: 0 0% 6%;
     --sidebar-foreground: 0 0% 100%;
     --sidebar-primary: 0 0% 100%;
     --sidebar-primary-foreground: 0 0% 0%;
-    --sidebar-accent: 0 0% 17%;
+    --sidebar-accent: 0 0% 10%;
     --sidebar-accent-foreground: 0 0% 100%;
-    --sidebar-border: 0 0% 24%;
+    --sidebar-border: 0 0% 12%;
     --sidebar-ring: 0 0% 30%;
     --sidebar-width-current: 16rem;
   }
 
   :root[data-theme="light"] {
-    --background: 210 40% 96%;
-    --foreground: 222 47% 11%;
+    /* Backgrounds */
+    --background: 210 40% 98%; /* #f8fafc */
+    --foreground: 222 47% 11%; /* #0f172a */
 
-    --card: 0 0% 100%;
-    --card-foreground: 222 47% 11%;
+    /* Cards and Popovers */
+    --card: 0 0% 100%; /* #ffffff */
+    --card-foreground: 222 47% 11%; /* #0f172a */
+    --popover: 0 0% 100%; /* #ffffff */
+    --popover-foreground: 222 47% 11%; /* #0f172a */
+    --card-muted: 0 0% 100%; /* #ffffff */
+    --card-muted-foreground: 222 47% 11%; /* #0f172a */
 
-    --popover: 0 0% 100%;
-    --popover-foreground: 222 47% 11%;
+    /* Primary and Secondary */
+    --primary: 222 47% 11%; /* #0f172a */
+    --primary-foreground: 0 0% 100%; /* #ffffff */
+    
+    --secondary: 210 40% 96%; /* #f1f5f9 */
+    --secondary-foreground: 222 47% 11%; /* #0f172a */
 
-    --primary: 222 47% 11%;
-    --primary-foreground: 0 0% 100%;
+    /* Muted and Accent */
+    --muted: 210 40% 96%; /* #f1f5f9 */
+    --muted-foreground: 215 16% 47%; /* #64748b */
+    
+    --accent: 210 40% 96%; /* #f1f5f9 */
+    --accent-foreground: 222 47% 11%; /* #0f172a */
 
-    --secondary: 214 32% 91%;
-    --secondary-foreground: 222 47% 11%;
-
-    --muted: 214 32% 91%;
-    --muted-foreground: 215 16% 47%;
-
-    --accent: 210 40% 96%;
-    --accent-foreground: 222 47% 11%;
-
+    /* Statuses */
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 100%;
-
-    --success: 142 76% 36%;
-    --warning: 31 95% 45%;
+    --success: 160 84% 39%; /* #10b981 */
+    --warning: 38 92% 50%; /* #f59e0b */
     --info: 217 91% 45%;
     
     --accent-blue: 217 91% 60%;
-    --accent-blue-glow: 217 91% 60% / 0.35;
+    --accent-blue-glow: 0 0% 0% / 0; /* Remove blue glow in light mode */
     
-    --card-muted: 210 40% 99%;
-    --card-muted-foreground: 222 47% 18%;
-    --border-accent: 215 25% 72%;
+    /* Borders and Inputs */
+    --border: 220 13% 91%; /* #e5e7eb */
+    --input: 210 40% 96%; /* #f1f5f9 */
+    --border-accent: 220 13% 91%; /* #e5e7eb */
+    --ring: 222 47% 11%; /* #0f172a */
 
-    --border: 214 32% 91%;
-    --input: 210 40% 96%;
-    --ring: 217 92% 45%;
-
-    --sidebar-background: 210 40% 98%;
-    --sidebar-foreground: 222 47% 11%;
-    --sidebar-primary: 222 47% 11%;
-    --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 214 32% 91%;
-    --sidebar-accent-foreground: 222 47% 11%;
-    --sidebar-border: 214 32% 91%;
-    --sidebar-ring: 217 92% 45%;
+    /* Sidebar */
+    --sidebar-background: 0 0% 100%; /* #ffffff */
+    --sidebar-foreground: 215 19% 35%; /* #475569 */
+    --sidebar-primary: 222 47% 11%; /* #0f172a */
+    --sidebar-primary-foreground: 0 0% 100%; /* #ffffff */
+    --sidebar-accent: 210 40% 96%; /* #f1f5f9 */
+    --sidebar-accent-foreground: 222 47% 11%; /* #0f172a */
+    --sidebar-border: 220 13% 91%; /* #e5e7eb */
+    --sidebar-ring: 222 47% 11%; /* #0f172a */
   }
 }
 
@@ -173,23 +177,53 @@ All colors MUST be HSL.
   }
 
   :root[data-theme="light"] .card-premium {
-    background: radial-gradient(140% 140% at 50% -10%, hsl(var(--accent) / 0.65) 0%, hsl(var(--card-muted)) 60%);
-    box-shadow: 0 35px 70px -25px hsl(var(--accent-blue) / 0.25);
+    background: hsl(var(--card));
+    border-color: hsl(var(--border));
+    box-shadow: 0 4px 10px rgba(0,0,0,0.04);
   }
 
   :root[data-theme="light"] .card-premium:hover {
-    box-shadow: 0 40px 80px -28px hsl(var(--accent-blue) / 0.3);
+    box-shadow: 0 6px 15px rgba(0,0,0,0.08); /* slight shadow increase */
+    transform: translateY(-2px);
   }
 
   .dark-glow {
-    box-shadow: 0 0 30px rgba(56, 189, 248, 0.15), inset 0 0 20px rgba(56, 189, 248, 0.05);
+    box-shadow: 0 0 30px rgba(56, 189, 248, 0.1), inset 0 0 20px rgba(56, 189, 248, 0.03);
+  }
+  
+  :root[data-theme="light"] .dark-glow {
+    box-shadow: 0 2px 8px rgba(0,0,0,0.05); /* replace with subtle shadow in light mode */
   }
 
   .glass-panel {
-    background: rgba(15, 23, 42, 0.6);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(10, 10, 10, 0.7);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+  }
+  
+  :root[data-theme="light"] .glass-panel {
+    background: rgba(255, 255, 255, 0.85);
+    border: 1px solid hsl(var(--border));
+  }
+
+  .hero-text-gradient {
+    @apply bg-clip-text text-transparent bg-gradient-to-b from-white to-white/60 font-bold tracking-tighter;
+  }
+  
+  :root[data-theme="light"] .hero-text-gradient {
+    @apply text-foreground bg-none; /* remove white gradient in light mode */
+  }
+
+  .view-fade-in {
+    opacity: 0;
+    transform: translateY(20px);
+    transition: opacity 1s cubic-bezier(0.23, 1, 0.32, 1), transform 1s cubic-bezier(0.23, 1, 0.32, 1);
+  }
+
+  .view-fade-in.active {
+    opacity: 1;
+    transform: translateY(0);
   }
 
   /* Custom Scrollbar */
@@ -318,6 +352,16 @@ All colors MUST be HSL.
     );
     background-size: 200% 100%;
     animation: shimmer 1.5s ease-in-out infinite;
+  }
+
+  /* Cursor Blink Animation */
+  @keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0; }
+  }
+
+  .animate-blink {
+    animation: blink 800ms step-end infinite;
   }
 
   /* Smooth content transitions */

@@ -40,8 +40,8 @@ export function FilePreviewPanel({ file, onClose }: FilePreviewPanelProps) {
   const isEncrypted = true; // BlockVault files are encrypted by default
 
   return (
-    <div className="h-full flex flex-col bg-card/40 border-l border-borderAccent/30 overflow-hidden relative group shadow-[-5px_0_20px_-10px_rgba(0,0,0,0.3)] backdrop-blur-sm">
-      <div className="flex items-center justify-between p-4 border-b border-borderAccent/30 bg-background/50 backdrop-blur-md">
+    <div className="h-full flex flex-col bg-transparent overflow-hidden relative group">
+      <div className="flex items-center justify-between p-4 border-b border-border bg-card/50">
         <h3 className="font-semibold text-sm truncate pr-4 text-foreground/90">{fileName}</h3>
         <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full hover:bg-muted" onClick={onClose}>
           <ExternalLink className="h-4 w-4 text-muted-foreground" />

@@ -47,6 +47,7 @@ export default defineConfig(() => {
         '/blockchain': proxyTarget('http://localhost:5001'),
         '/auth': proxyTarget('http://localhost:5001'),
         '/documents': proxyTarget('http://localhost:5001'),
+        '/demo': proxyTarget('http://localhost:5001'),
         '/signature-requests': proxyTarget('http://localhost:5001'),
         '/signature-requests-sent': proxyTarget('http://localhost:5001'),
       },

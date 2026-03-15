@@ -129,7 +129,9 @@ export function Sidebar() {
                   cn(
                     "group/nav flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all",
                     !isExpanded && "md:justify-center md:px-2",
-                    isActive ? "text-primary" : "text-sidebar-foreground hover:text-primary/80"
+                    isActive 
+                      ? "bg-sidebar-accent text-sidebar-accent-foreground shadow-sm" 
+                      : "text-sidebar-foreground hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
                   )
                 }
               >
@@ -139,8 +141,8 @@ export function Sidebar() {
                       className={cn(
                         "sidebar-icon h-9 w-9",
                         isActive
-                          ? "sidebar-icon--active"
-                          : "text-sidebar-foreground group-hover/nav:text-primary/70 group-focus-visible/nav:text-primary"
+                          ? "text-sidebar-accent-foreground"
+                          : "text-sidebar-foreground group-hover/nav:text-sidebar-foreground"
                       )}
               >
                 <item.icon className="h-5 w-5 shrink-0" />

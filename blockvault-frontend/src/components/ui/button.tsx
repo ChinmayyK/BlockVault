@@ -9,16 +9,16 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        default: "bg-primary text-primary-foreground hover:bg-primary/90 hover:shadow-[0_0_20px_hsl(var(--accent-blue-glow))]",
+        default: "bg-primary text-primary-foreground hover:bg-slate-950 dark:hover:bg-primary/90 hover:shadow-[0_0_20px_hsl(var(--accent-blue-glow))]",
         destructive: "bg-destructive text-destructive-foreground hover:bg-destructive/90",
-        outline: "border border-input bg-background hover:bg-accent hover:text-accent-foreground hover:border-accent-blue/50",
-        secondary: "bg-secondary text-secondary-foreground hover:bg-secondary/80 hover:border-accent-blue/30",
-        ghost: "hover:bg-accent hover:text-accent-foreground",
+        outline: "border border-input bg-background hover:bg-slate-100 hover:text-accent-foreground dark:hover:bg-accent dark:hover:text-accent-foreground hover:border-slate-300 dark:hover:border-accent-blue/50",
+        secondary: "bg-secondary text-secondary-foreground hover:bg-slate-200 dark:hover:bg-secondary/80 hover:border-slate-300 dark:hover:border-accent-blue/30",
+        ghost: "hover:bg-slate-100 hover:text-accent-foreground dark:hover:bg-accent dark:hover:text-accent-foreground",
         link: "text-accent-blue underline-offset-4 hover:underline",
         // New black/white variants
-        "modal-primary": "bg-primary text-primary-foreground hover:bg-primary/90 hover:shadow-[0_0_20px_hsl(var(--accent-blue-glow))]",
-        "modal-secondary": "bg-secondary text-secondary-foreground border border-border hover:bg-secondary/80 hover:border-accent-blue/50",
-        "modal-ghost": "hover:bg-accent hover:text-accent-foreground",
+        "modal-primary": "bg-primary text-primary-foreground hover:bg-slate-950 dark:hover:bg-primary/90 hover:shadow-[0_0_20px_hsl(var(--accent-blue-glow))]",
+        "modal-secondary": "bg-secondary text-secondary-foreground border border-border hover:bg-slate-200 dark:hover:bg-secondary/80 hover:border-slate-300 dark:hover:border-accent-blue/50",
+        "modal-ghost": "hover:bg-slate-100 dark:hover:bg-accent hover:text-accent-foreground dark:hover:text-accent-foreground",
         "modal-danger": "bg-red-600 text-white hover:bg-red-700 hover:shadow-[0_0_15px_rgba(239,68,68,0.5)]",
       },
       size: {

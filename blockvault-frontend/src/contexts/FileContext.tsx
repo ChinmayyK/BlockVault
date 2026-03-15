@@ -128,12 +128,12 @@ export const FileProvider: React.FC<FileProviderProps> = ({ children }) => {
     ? `${initialUser?.address || 'unknown'}:${initialUser?.jwt}`
     : 'guest';
 
-  // Demo mode detection
-  const isDemoMode = initialUser?.address === 'demo_user';
-
   // Only consider the session authenticated once a JWT is present.
   const [isAuthenticated, setIsAuthenticated] = useState(initialIsAuthenticated);
   const [authScope, setAuthScope] = useState(initialAuthScope);
+
+  // Demo mode detection — must be reactive so it updates when DemoInitPage injects the demo user
+  const [isDemoMode, setIsDemoMode] = useState(initialUser?.address === 'demo_user');
 
   const userRef = useRef<{ jwt?: string; address?: string } | null>(initialUser);
 
@@ -146,6 +146,7 @@ export const FileProvider: React.FC<FileProviderProps> = ({ children }) => {
       const storedUser = readStoredUser<{ jwt?: string; address?: string }>();
       const authenticated = !!storedUser?.jwt;
       setIsAuthenticated(authenticated);
+      setIsDemoMode(storedUser?.address === 'demo_user');
       setAuthScope(
         authenticated
           ? `${storedUser?.address || 'unknown'}:${storedUser?.jwt}`
@@ -198,7 +199,7 @@ export const FileProvider: React.FC<FileProviderProps> = ({ children }) => {
     hasNextPage: hasMoreFiles,
     isFetchingNextPage: isFetchingMoreFiles,
   } = useInfiniteQuery({
-    queryKey: ['files', 'infinite', authScope],
+    queryKey: ['files', 'infinite', authScope, isDemoMode],
     queryFn: async ({ pageParam }) => {
       const params = new URLSearchParams({ limit: '50' });
       if (pageParam) {

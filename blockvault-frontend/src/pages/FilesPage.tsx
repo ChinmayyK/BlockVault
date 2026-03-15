@@ -233,12 +233,16 @@ export default function FilesPage() {
   const currentViewMode = selectedDetailsFile ? 'list' : viewMode;
 
   return (
-    <div className="flex h-[calc(100vh-6rem)] -mt-6 -mx-6 overflow-hidden animate-in fade-in duration-500">
+    <div className={`h-[calc(100vh-6rem)] -mt-6 overflow-hidden animate-in fade-in duration-500 ${
+      selectedDetailsFile 
+        ? "grid grid-cols-[340px_minmax(0,1fr)_320px] gap-6" 
+        : "flex -mx-6"
+    }`}>
       {/* Explorer Pane */}
       <div
         className={
           selectedDetailsFile
-            ? "hidden lg:block w-[320px] flex-shrink-0 overflow-y-auto px-4 pt-6 pb-12 space-y-4 custom-scrollbar relative bg-card/10 border-r border-borderAccent/10"
+            ? "hidden lg:flex flex-col overflow-y-auto pt-6 pb-12 space-y-4 custom-scrollbar relative"
             : "flex-1 overflow-y-auto px-6 pt-6 pb-12 space-y-6 custom-scrollbar relative"
         }
         onDragEnter={handleDragEnter}
@@ -467,7 +471,7 @@ export default function FilesPage() {
       {selectedDetailsFile && (
         <>
           {/* Document Preview Pane */}
-          <div className="hidden md:block flex-1 min-w-0 z-10 relative shadow-2xl bg-zinc-950/20">
+          <div className="hidden md:flex flex-col min-w-0 relative bg-secondary/30 rounded-xl border border-border mt-6 mb-6 overflow-hidden">
             <FilePreviewPanel 
               file={selectedDetailsFile} 
               onClose={() => setSelectedDetailsFile(null)}
@@ -475,13 +479,11 @@ export default function FilesPage() {
           </div>
 
           {/* Inspector Panel */}
-          <aside className="w-full sm:w-[360px] flex-shrink-0 border-l border-borderAccent/10 bg-card/30 overflow-y-auto custom-scrollbar shadow-[-10px_0_30px_-15px_rgba(0,0,0,0.5)]">
-            <div className="p-4 sm:p-6 min-h-full">
-              <FileDetailsPanel 
-                file={selectedDetailsFile} 
-                onClose={() => setSelectedDetailsFile(null)} 
-              />
-            </div>
+          <aside className="w-full h-full overflow-y-auto custom-scrollbar pt-6 pb-6">
+            <FileDetailsPanel 
+              file={selectedDetailsFile} 
+              onClose={() => setSelectedDetailsFile(null)} 
+            />
           </aside>
         </>
       )}

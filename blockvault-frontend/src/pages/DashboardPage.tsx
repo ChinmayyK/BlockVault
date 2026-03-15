@@ -263,10 +263,10 @@ export default function DashboardPage() {
           aria-label="Upload file"
           title="Upload file"
         >
-          <span className="absolute inset-0 rounded-full bg-gradient-to-br from-blue-500 via-indigo-500 to-violet-500 opacity-60 blur-lg transition-all duration-300 group-hover:opacity-90 group-hover:blur-xl" />
-          <span className="absolute inset-0 rounded-full border border-blue-400/50 opacity-40 group-hover:opacity-60 transition" />
-          <div className="relative flex h-16 w-16 items-center justify-center rounded-full bg-background border border-border shadow-[0_25px_45px_-20px_rgba(56,189,248,0.45)] transition-all duration-300 group-hover:scale-110 group-hover:shadow-[0_30px_60px_-18px_rgba(99,102,241,0.55)] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-blue-400/40">
-            <Plus className="h-8 w-8 text-foreground transition-transform duration-300 group-hover:rotate-90" />
+          <span className="absolute inset-0 rounded-full bg-slate-900/60 blur-lg transition-all duration-300 group-hover:opacity-90 group-hover:blur-xl dark:bg-gradient-to-br dark:from-blue-500 dark:via-indigo-500 dark:to-violet-500 dark:opacity-60" />
+          <span className="absolute inset-0 rounded-full border border-slate-700/50 opacity-40 group-hover:opacity-60 transition dark:border-blue-400/50" />
+          <div className="relative flex h-16 w-16 items-center justify-center rounded-full bg-slate-900 text-white shadow-xl transition-all duration-300 group-hover:scale-110 group-hover:bg-slate-800 dark:bg-background dark:text-foreground dark:border dark:border-border dark:shadow-[0_25px_45px_-20px_rgba(56,189,248,0.45)] dark:group-hover:shadow-[0_30px_60px_-18px_rgba(99,102,241,0.55)] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-slate-400/40">
+            <Plus className="h-8 w-8 transition-transform duration-300 group-hover:rotate-90" />
           </div>
           <span className="absolute right-full mr-4 rounded-full bg-card/95 border border-border shadow-xl px-4 py-2 text-xs font-bold uppercase tracking-wider text-foreground opacity-0 transition-all duration-300 group-hover:translate-x-0 group-hover:opacity-100 flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
@@ -359,14 +359,39 @@ export default function DashboardPage() {
                   <p className="text-sm text-muted-foreground">{stat.label}</p>
                   <p className="text-2xl font-semibold mt-2">{stat.value}</p>
                 </div>
-                <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center">
-                  <stat.icon className="h-6 w-6 text-primary" />
+                <div className="w-12 h-12 rounded-xl bg-secondary dark:bg-primary/10 flex items-center justify-center">
+                  <stat.icon className="h-6 w-6 text-foreground dark:text-primary" />
                 </div>
               </div>
             </Card>
           ))}
         </div>
       )}
+
+      {/* Recent Files */}
+      <section>
+        <div className="flex items-center gap-2 mb-4">
+          <FolderOpen className="w-5 h-5 text-muted-foreground" />
+          <h2 className="text-lg font-semibold">Recent Files</h2>
+        </div>
+        {loading && !files?.length ? (
+          <FileListSkeleton count={4} />
+        ) : (
+          <FileList
+            files={sortedFiles}
+            onShare={(fileId) => {
+              setSelectedFile(fileId);
+              setShowShareModal(true);
+            }}
+            type="my-files"
+            viewMode="grid"
+            hasMore={hasMoreFiles}
+            onLoadMore={loadMoreFiles}
+            isLoadingMore={loadingMoreFiles}
+            onFileSelect={setSelectedDetailsFile}
+          />
+        )}
+      </section>
 
       {/* Upload Modal */}
       {showUpload && (

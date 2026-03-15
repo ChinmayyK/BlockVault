@@ -13,9 +13,10 @@ import { LegalModalFrame } from '@/components/legal/modals/LegalModalFrame';
 
 interface FileUploadProps {
   onClose: () => void;
+  inline?: boolean;
 }
 
-export const FileUpload: React.FC<FileUploadProps> = ({ onClose }) => {
+export const FileUpload: React.FC<FileUploadProps> = ({ onClose, inline = false }) => {
   const { uploadFile } = useFiles();
   const [file, setFile] = useState<File | null>(null);
   const [passphrase, setPassphrase] = useState('');
@@ -153,6 +154,7 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onClose }) => {
         footer={footer}
         headerAccent="blue"
         widthClassName="max-w-2xl"
+        inline={inline}
       >
         <div className="space-y-6">
 

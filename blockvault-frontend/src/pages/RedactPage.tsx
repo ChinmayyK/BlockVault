@@ -91,6 +91,7 @@ export default function RedactPage() {
                     : "Not checked";
     const documentLoadRequestRef = useRef(0);
     const proofPollingInFlightRef = useRef(false);
+    const autoAnalyzeAttemptedRef = useRef(false);
 
     useEffect(() => {
         setDocumentUrl((previousUrl) => {
@@ -123,6 +124,7 @@ export default function RedactPage() {
         setReviewGroupId(null);
         setRiskReport(null);
         setShowRiskPanel(false);
+        autoAnalyzeAttemptedRef.current = false;
         setRedactedFileUrl((previousUrl) => {
             if (previousUrl) {
                 URL.revokeObjectURL(previousUrl);
@@ -436,12 +438,13 @@ export default function RedactPage() {
 
     // Auto-analyze after document unlock (fail silently — user can retry with Analyze button)
     useEffect(() => {
-        if (documentUrl && confirmedPassphrase && !isAnalyzed && !isAnalyzing && !redactionComplete) {
+        if (documentUrl && confirmedPassphrase && !isAnalyzed && !isAnalyzing && !redactionComplete && !autoAnalyzeAttemptedRef.current) {
+            autoAnalyzeAttemptedRef.current = true;
             handleAnalyze().catch(() => {
                 // Silently fail auto-analyze — user can click "Analyze" manually
             });
         }
-    }, [documentUrl, confirmedPassphrase, isAnalyzed, isAnalyzing, redactionComplete]);
+    }, [documentUrl, confirmedPassphrase, isAnalyzed, redactionComplete]);
 
     // Toggle entity selection
     const handleToggleEntity = (id: string, checked: boolean) => {

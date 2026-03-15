@@ -16,6 +16,7 @@ interface LegalModalFrameProps {
   contentClassName?: string;
   overlayClassName?: string;
   headerAccent?: 'blue' | 'green' | 'violet';
+  inline?: boolean;
 }
 
 const iconAccentMap: Record<NonNullable<LegalModalFrameProps['headerAccent']>, string> = {
@@ -36,22 +37,25 @@ export function LegalModalFrame({
   contentClassName,
   overlayClassName,
   headerAccent = 'blue',
+  inline = false,
 }: LegalModalFrameProps) {
   return (
     <div
       className={cn(
-        "fixed inset-0 z-[999] flex items-center justify-center bg-black/90 p-4 backdrop-blur-sm",
+        inline 
+          ? "relative flex h-full w-full items-center justify-center p-0" 
+          : "fixed inset-0 z-[999] flex items-center justify-center bg-black/90 p-4 backdrop-blur-sm",
         overlayClassName,
       )}
     >
       <div
         className={cn(
-          `legal-modal flex w-full ${widthClassName} max-h-[88vh] flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl`,
-          'animate-in fade-in-0 zoom-in-95 duration-200',
+          `legal-modal flex w-full flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl`,
+          inline ? "h-full" : `max-h-[88vh] ${widthClassName} animate-in fade-in-0 zoom-in-95 duration-200`,
           className,
         )}
       >
-        <div className="flex items-start justify-between px-6 py-5">
+        <div className="flex items-start justify-between px-4 sm:px-6 py-4 sm:py-5">
           <div className="flex items-center gap-4">
             <div
               className={cn(
@@ -76,13 +80,13 @@ export function LegalModalFrame({
           </Button>
         </div>
         <div className="mx-6"><GlowingSeparator /></div>
-        <div className={cn('flex-1 overflow-y-auto px-6 py-6', contentClassName)}>
+        <div className={cn('flex-1 overflow-y-auto px-4 sm:px-6 py-4 sm:py-6', contentClassName)}>
           {children}
         </div>
         {footer && (
           <>
             <div className="mx-6"><GlowingSeparator /></div>
-            <div className="flex items-center justify-end gap-3 px-6 py-4">
+            <div className="flex items-center justify-end gap-3 px-4 sm:px-6 py-3 sm:py-4">
               {footer}
             </div>
           </>

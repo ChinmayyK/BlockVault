@@ -147,7 +147,7 @@ export default function DemoRedactPage() {
                         </p>
                     </div>
                 </div>
-                {proofStatus === 'valid' && (
+                {proofStatus === 'valid' && (   
                     <div className="flex items-center gap-2 bg-green-500/10 text-green-500 px-3 py-1.5 rounded-full text-sm font-medium border border-green-500/20">
                         <CheckCircle2 className="w-4 h-4" />
                         Zero-Knowledge Proof Verified

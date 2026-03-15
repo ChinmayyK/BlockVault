@@ -1,4 +1,4 @@
-import { Shield, Lock, FileCheck, ArrowRight, Wallet, CheckCircle2, FileSearch, Fingerprint, Link2, Cpu, Database, Server, Component, CodeSquare, GitBranch, TerminalSquare, Github } from "lucide-react";
+import { Shield, Lock, FileCheck, ArrowRight, Wallet, CheckCircle2, FileSearch, Fingerprint, Link2, Cpu, Database, Server, Component, CodeSquare, GitBranch, TerminalSquare, Github, Upload, X, File, AlertCircle, Eye, Scissors, FileText, ShieldCheck, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { GlowingSeparator } from "@/components/ui/glowing-separator";
@@ -7,6 +7,121 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useEffect, useState } from "react";
 import { MobileWalletModal } from "@/components/auth/MobileWalletModal";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
+import { Input } from "@/components/ui/input";
+import { Progress } from "@/components/ui/progress";
+import { FileUpload } from "@/components/file/FileUpload";
+import { ReviewPanel } from "@/components/redact/ReviewPanel";
+import { FileDetailsPanel } from "@/components/file/FileDetailsPanel";
+
+const typewriterPhrases = [
+  { text: "Detect Sensitive Data Automatically", highlight: "Sensitive Data" },
+  { text: "Apply Verifiable Document Redactions", highlight: "Verifiable Document Redactions" },
+  { text: "Generate Zero-Knowledge Proofs", highlight: "Zero-Knowledge Proofs" },
+  { text: "Verify Document Integrity Instantly", highlight: "Integrity Instantly" },
+  { text: "Create Tamper-Proof Document Records", highlight: "Tamper-Proof" },
+];
+
+const TYPING_SPEED = 60;
+const DELETING_SPEED = 40;
+const PAUSE_DURATION = 1500;
+
+const TypewriterHeadline = () => {
+  const [text, setText] = useState("");
+  const [phraseIndex, setPhraseIndex] = useState(0);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  useEffect(() => {
+    const currentPhraseObj = typewriterPhrases[phraseIndex];
+    const currentPhrase = currentPhraseObj.text;
+    let timer: NodeJS.Timeout;
+
+    if (isDeleting) {
+      if (text === "") {
+        setIsDeleting(false);
+        setPhraseIndex((prev) => (prev + 1) % typewriterPhrases.length);
+      } else {
+        timer = setTimeout(() => {
+          setText(currentPhrase.substring(0, text.length - 1));
+        }, DELETING_SPEED);
+      }
+    } else {
+      if (text === currentPhrase) {
+        timer = setTimeout(() => {
+          setIsDeleting(true);
+        }, PAUSE_DURATION);
+      } else {
+        timer = setTimeout(() => {
+          setText(currentPhrase.substring(0, text.length + 1));
+        }, TYPING_SPEED);
+      }
+    }
+
+    return () => clearTimeout(timer);
+  }, [text, isDeleting, phraseIndex]);
+
+  // Create formatted HTML text based on currently typed characters
+  const getFormattedText = () => {
+    const currentPhraseObj = typewriterPhrases[phraseIndex];
+    const highlight = currentPhraseObj.highlight;
+    
+    const highlightIdx = currentPhraseObj.text.indexOf(highlight);
+    
+    if (highlightIdx === -1 || text.length <= highlightIdx) {
+      return text;
+    }
+    
+    const beforeHighlight = text.substring(0, highlightIdx);
+    const inHighlight = text.substring(highlightIdx, Math.min(highlightIdx + highlight.length, text.length));
+    const afterHighlight = text.length > highlightIdx + highlight.length 
+      ? text.substring(highlightIdx + highlight.length) 
+      : "";
+    
+    return `${beforeHighlight}<span class="font-extrabold text-primary text-glow-subtle">${inHighlight}</span>${afterHighlight}`;
+  };
+
+  return (
+    <div className="mb-10 w-full px-4 overflow-visible">
+      <div className="flex flex-col items-center justify-center w-full text-4xl md:text-5xl lg:text-6xl font-bold tracking-tight leading-[1.2] md:leading-[1.2]">
+        
+        {/* We use a CSS Grid where all cells overlap. 
+            All phrases are rendered invisibly to guarantee the grid expands 
+            to the exact max height/width required on ANY viewport, supporting multi-line wraps perfectly. 
+            The actual typing text is placed on top. */}
+        <div className="grid grid-cols-1 grid-rows-1 text-center max-w-4xl mx-auto w-full items-center">
+          
+          {/* 1. Stack all phrases invisibly for perfect viewport dimensions */}
+          {typewriterPhrases.map((phraseObj, i) => {
+            const t = phraseObj.text;
+            const h = phraseObj.highlight;
+            const hIdx = t.indexOf(h);
+            const beforeH = t.substring(0, hIdx);
+            const inH = t.substring(hIdx, hIdx + h.length);
+            const afterH = t.substring(hIdx + h.length);
+            const html = `${beforeH}<span class="font-extrabold text-primary">${inH}</span>${afterH}<span class="inline-block w-[0.5ch]"></span>`;
+
+            return (
+              <div 
+                key={i}
+                className="col-start-1 row-start-1 opacity-0 select-none pointer-events-none w-full"
+                aria-hidden="true"
+                dangerouslySetInnerHTML={{ __html: html }}
+              />
+            );
+          })}
+
+          {/* 2. Render the live typing text */}
+          <div className="col-start-1 row-start-1 w-full text-center z-10 text-foreground">
+            <span className="inline">
+              <span dangerouslySetInnerHTML={{ __html: getFormattedText() }} />
+              <span className="animate-blink font-light text-primary -translate-y-[2px] ml-[2px]">|</span>
+            </span>
+          </div>
+          
+        </div>
+      </div>
+    </div>
+  );
+};
 
 const IndexPage = () => {
   const navigate = useNavigate();
@@ -32,6 +147,19 @@ const IndexPage = () => {
     await handleConnect();
     navigate("/login");
   };
+
+  useEffect(() => {
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('active');
+        }
+      });
+    }, { threshold: 0.1 });
+
+    document.querySelectorAll('.view-fade-in').forEach(el => observer.observe(el));
+    return () => observer.disconnect();
+  }, []);
 
   const goToLogin = () => {
     navigate('/login');
@@ -61,6 +189,27 @@ const IndexPage = () => {
     { icon: Fingerprint, label: "ZK Proof", desc: "Integrity mathematically verified" },
     { icon: Link2, label: "Anchor", desc: "Stored immutably on-chain" },
   ];
+
+  const mockEntities = [
+    { text: "John Doe", entity_type: "PERSON", page: 1, score: 0.98, approved: true, id: "1" },
+    { text: "Globex Corporation", entity_type: "ORG", page: 1, score: 0.95, approved: false, id: "2" }
+  ];
+
+  const mockFileData = {
+    id: "demo_doc_1",
+    name: "Confidential_Q3_Earnings.pdf",
+    size: 2450000,
+    upload_date: new Date().toISOString(),
+    encrypted: true,
+    redaction_status: "completed",
+    proof_status: "verified",
+    tx_hash: "0x71f8b9...920d3e",
+    ipfs_cid: "QmYwAPJ...c1Gj5z",
+    metadata: {
+      redaction_count: 12,
+      compliance_profile: "SOC2 (Strict)"
+    }
+  };
 
   return (
     <div className="min-h-screen bg-background">
@@ -92,21 +241,17 @@ const IndexPage = () => {
                   </span>
                   BlockVault v2 is Live
                 </div>
-                <h1 className="text-5xl md:text-7xl font-extrabold tracking-tight mb-8 leading-tight">
-                  Secure Document Redaction & 
-                  <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary to-indigo-500 block mt-2">
-                    Verification Platform
-                  </span>
-                </h1>
-                <p className="text-xl text-muted-foreground mb-10 leading-relaxed max-w-3xl mx-auto">
+
+                <TypewriterHeadline />
+                <p className="text-lg md:text-xl text-slate-600 dark:text-muted-foreground/80 mb-12 leading-relaxed max-w-2xl mx-auto font-medium">
                   Detect sensitive data, apply secure redactions, generate verifiable zero-knowledge proofs, and anchor document integrity on the blockchain.
                 </p>
-                <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-                  <Button size="lg" className="h-14 px-8 text-lg font-semibold gap-2 shadow-lg shadow-primary/25 hover:shadow-primary/40 transition-all hover:-translate-y-1 w-full sm:w-auto" onClick={() => navigate("/demo")}>
+                <div className="flex flex-col sm:flex-row items-center justify-center gap-6">
+                  <Button size="lg" className="h-14 px-10 text-lg font-bold gap-2 shadow-[0_0_20px_hsl(var(--primary)/0.2)] hover:shadow-[0_0_30px_hsl(var(--primary)/0.4)] transition-all hover:-translate-y-1 w-full sm:w-auto rounded-full" onClick={() => navigate("/demo")}>
                     Try Demo
                     <ArrowRight className="h-5 w-5" />
                   </Button>
-                  <Button size="lg" variant="outline" className="h-14 px-8 text-lg font-medium gap-2 border-border/50 bg-background/50 backdrop-blur-sm w-full sm:w-auto" onClick={handleQuickConnect} disabled={loading}>
+                  <Button size="lg" variant="outline" className="h-14 px-8 text-lg font-semibold gap-2 border-white/10 bg-white/5 backdrop-blur-md rounded-full hover:bg-white/10 transition-colors w-full sm:w-auto" onClick={handleQuickConnect} disabled={loading}>
                     <Wallet className="h-5 w-5" />
                     Connect Wallet
                   </Button>
@@ -122,25 +267,25 @@ const IndexPage = () => {
           </section>
 
           {/* SECTION 2: VISUAL DEMO WORKFLOW */}
-          <section className="py-12 border-y border-border/40 bg-card/20 backdrop-blur-md relative">
-            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-3/4 h-px bg-gradient-to-r from-transparent via-primary/30 to-transparent"></div>
+          <section className="py-24 border-y border-white/5 bg-card/10 backdrop-blur-md relative overflow-hidden view-fade-in">
+            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-px bg-gradient-to-r from-transparent via-primary/20 to-transparent"></div>
             <div className="container px-6 mx-auto">
-              <div className="text-center mb-10">
-                <h2 className="text-sm font-bold uppercase tracking-widest text-muted-foreground">The BlockVault Pipeline</h2>
+              <div className="text-center mb-16">
+                <h2 className="text-sm font-bold uppercase tracking-[0.3em] text-slate-500 dark:text-muted-foreground/60">The BlockVault Pipeline</h2>
               </div>
-              <div className="flex flex-col md:flex-row items-center justify-center gap-4 md:gap-8 max-w-5xl mx-auto">
+              <div className="flex flex-col md:flex-row items-center justify-center gap-6 md:gap-12 max-w-6xl mx-auto">
                 {workflowSteps.map((step, index) => (
                   <div key={step.label} className="flex flex-col items-center flex-1 relative group w-full md:w-auto">
-                    <div className="w-16 h-16 rounded-2xl bg-card border border-border/50 flex items-center justify-center mb-4 shadow-xl shadow-black/5 group-hover:border-primary/50 group-hover:scale-110 transition-all duration-300 z-10 relative">
-                      <step.icon className="h-8 w-8 text-primary/80 group-hover:text-primary transition-colors" />
+                    <div className="w-20 h-20 rounded-[2rem] bg-card border border-white/5 flex items-center justify-center mb-6 shadow-2xl group-hover:border-primary/30 group-hover:bg-white/[0.02] group-hover:scale-105 transition-all duration-500 z-10 relative">
+                      <step.icon className="h-10 w-10 text-muted-foreground group-hover:text-primary transition-colors duration-500" />
                     </div>
-                    <h3 className="font-semibold text-foreground mb-1 text-center">{step.label}</h3>
-                    <p className="text-xs text-muted-foreground text-center px-2">{step.desc}</p>
+                    <h3 className="text-lg font-bold text-foreground mb-2 text-center">{step.label}</h3>
+                    <p className="text-sm text-muted-foreground/70 text-center px-4 leading-relaxed">{step.desc}</p>
                     
                     {/* Connecting Line */}
                     {index < workflowSteps.length - 1 && (
-                      <div className="hidden md:block absolute top-8 left-[60%] w-[80%] h-[2px] bg-gradient-to-r from-border to-transparent -z-10">
-                        <div className="absolute inset-0 bg-gradient-to-r from-primary to-transparent opacity-0 group-hover:opacity-50 transition-opacity duration-500 animate-pulse"></div>
+                      <div className="hidden md:block absolute top-10 left-[70%] w-[60%] h-[1px] bg-gradient-to-r from-white/10 to-transparent -z-10">
+                        <div className="absolute inset-0 bg-gradient-to-r from-primary/30 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-700"></div>
                       </div>
                     )}
                   </div>
@@ -149,58 +294,126 @@ const IndexPage = () => {
             </div>
           </section>
 
-          {/* SECTION 4: HOW IT WORKS */}
-          <section className="py-16">
-            <div className="max-w-4xl mx-auto px-6">
-              <div className="text-center mb-16">
-                <h2 className="text-3xl font-bold mb-4">How it works</h2>
-                <p className="text-muted-foreground text-lg">Achieve total document security in under 10 seconds.</p>
+          {/* SECTION 4: HOW BLOCKVAULT PROTECTS YOUR DOCUMENTS */}
+          <section className="py-32 view-fade-in relative z-10 w-full overflow-hidden">
+            <div className="max-w-7xl mx-auto px-6">
+              <div className="text-center mb-24">
+                <h2 className="text-4xl md:text-5xl font-bold tracking-tight">How BlockVault Protects Your Documents</h2>
               </div>
               
-              <div className="space-y-6">
-                <div className="flex gap-6 p-6 rounded-2xl bg-card/40 border border-border/50 hover:border-primary/30 transition-colors">
-                  <div className="flex-shrink-0 w-12 h-12 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-xl">1</div>
-                  <div>
-                    <h3 className="text-xl font-semibold mb-2">Upload & Analyze</h3>
-                    <p className="text-muted-foreground leading-relaxed">Simply upload your sensitive document. BlockVault's on-device AI instantly scans and detects Personally Identifiable Information (PII), SSNs, and financial data locally in your browser.</p>
-                  </div>
-                </div>
-                <div className="flex gap-6 p-6 rounded-2xl bg-card/40 border border-border/50 hover:border-primary/30 transition-colors">
-                  <div className="flex-shrink-0 w-12 h-12 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-xl">2</div>
-                  <div>
-                    <h3 className="text-xl font-semibold mb-2">Redact & Prove</h3>
-                    <p className="text-muted-foreground leading-relaxed">Review the AI suggestions and apply redactions. The system automatically generates a Zero-Knowledge Proof (zk-SNARK), mathematically proving the original content remains intact without revealing the hidden text.</p>
-                  </div>
-                </div>
-                <div className="flex gap-6 p-6 rounded-2xl bg-card/40 border border-border/50 hover:border-primary/30 transition-colors">
-                  <div className="flex-shrink-0 w-12 h-12 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-xl">3</div>
-                  <div>
-                    <h3 className="text-xl font-semibold mb-2">Anchor & Share</h3>
-                    <p className="text-muted-foreground leading-relaxed">The proof and encrypted document are anchored immutably to the Polygon blockchain. Share the verifiable, redacted document with third parties who can independently audit its authenticity.</p>
-                  </div>
-                </div>
+              <div className="flex flex-col gap-24 lg:gap-32 w-full">
+                {[
+                  {
+                    step: "Step 1",
+                    title: "Upload & Analyze",
+                    description: "Upload any document and BlockVault automatically scans for sensitive information such as names, IDs, and financial data.",
+                    mockup: (
+                      <div className="flex items-center justify-center h-full w-full pointer-events-none select-none pb-8 sm:pb-0 overflow-hidden relative">
+                        <div className="w-[120%] h-[120%] sm:w-full sm:h-full flex items-center justify-center scale-[0.6] sm:scale-[0.85] origin-center sm:origin-center bg-transparent">
+                          <FileUpload inline={true} onClose={() => {}} />
+                        </div>
+                      </div>
+                    )
+                  },
+                  {
+                    step: "Step 2",
+                    title: "Detect Sensitive Data",
+                    description: "AI-powered detection highlights sensitive entities in your document that may require redaction.",
+                    mockup: (
+                      <div className="flex flex-col h-full w-full pointer-events-none select-none bg-background shadow-inner items-center justify-center overflow-hidden">
+                        <div className="w-full h-full sm:scale-90 origin-top bg-card border border-border sm:rounded-2xl shadow-2xl mt-0 sm:mt-10 overflow-hidden">
+                          <ReviewPanel 
+                              entities={mockEntities as any} 
+                              currentIndex={0} 
+                              onAccept={() => {}} 
+                              onSkip={() => {}} 
+                              onPrevious={() => {}} 
+                              onNext={() => {}} 
+                              onEdit={() => {}} 
+                              onFinish={() => {}} 
+                          />
+                        </div>
+                      </div>
+                    )
+                  },
+                  {
+                    step: "Step 3",
+                    title: "Redact & Prove",
+                    description: "Apply secure redactions while generating a Zero-Knowledge Proof that verifies document integrity without exposing hidden text.",
+                    mockup: (
+                      <div className="flex flex-col items-center justify-center h-full w-full pointer-events-none select-none overflow-hidden">
+                         <div className="w-full h-full scale-[0.80] sm:scale-95 origin-top sm:origin-top bg-card overflow-hidden">
+                           <FileDetailsPanel file={{...mockFileData, proof_status: 'verified'}} onClose={() => {}} />
+                         </div>
+                      </div>
+                    )
+                  },
+                  {
+                    step: "Step 4",
+                    title: "Anchor on Blockchain",
+                    description: "The document hash and proof are anchored on blockchain, creating a permanent verifiable record of authenticity.",
+                    mockup: (
+                      <div className="flex items-center justify-center h-full w-full pointer-events-none select-none overflow-hidden pb-10 sm:pb-0">
+                         <div className="w-full h-full scale-[0.80] sm:scale-95 origin-bottom sm:origin-center bg-card overflow-hidden flex flex-col justify-end">
+                           <FileDetailsPanel file={mockFileData} onClose={() => {}} />
+                         </div>
+                      </div>
+                    )
+                  }
+                ].map((item, index) => {
+                  const isEven = index % 2 === 0;
+                  return (
+                    <div key={item.step} className={`flex flex-col md:flex-row gap-8 md:gap-16 items-center ${isEven ? '' : 'md:flex-row-reverse'} view-fade-in group`}>
+                      <div className="flex-1 space-y-6 w-full max-w-xl mx-auto md:mx-0">
+                        <div className="inline-flex items-center justify-center px-4 py-1.5 rounded-full bg-primary/10 text-primary text-sm font-bold tracking-wide border border-primary/20 shadow-sm">
+                          {item.step}
+                        </div>
+                        <h3 className="text-3xl md:text-4xl font-extrabold tracking-tight">{item.title}</h3>
+                        <p className="text-xl text-muted-foreground leading-relaxed font-medium">{item.description}</p>
+                      </div>
+                      
+                      <div className="flex-1 w-full max-w-xl mx-auto md:mx-0">
+                        {/* Browser Frame */}
+                        <div className="relative rounded-2xl md:rounded-[2rem] overflow-hidden border border-white/10 bg-card shadow-2xl transition-all duration-700 group-hover:-translate-y-2 group-hover:shadow-[0_20px_50px_rgba(0,0,0,0.5)] group-hover:border-white/20">
+                          <div className="h-12 bg-white/5 border-b border-white/5 flex items-center px-5 gap-2 backdrop-blur-md">
+                            <div className="flex gap-2">
+                              <div className="w-3 h-3 rounded-full bg-red-500/80 shadow-[0_0_5px_rgba(239,68,68,0.5)]" />
+                              <div className="w-3 h-3 rounded-full bg-yellow-500/80 shadow-[0_0_5px_rgba(234,179,8,0.5)]" />
+                              <div className="w-3 h-3 rounded-full bg-green-500/80 shadow-[0_0_5px_rgba(34,197,94,0.5)]" />
+                            </div>
+                          </div>
+                          <div className="h-[250px] sm:h-[300px] md:h-[350px] bg-background relative overflow-hidden flex items-center justify-center">
+                            {/* Subtle background grid pattern */}
+                            <div className="absolute inset-0 bg-[linear-gradient(to_right,#80808012_1px,transparent_1px),linear-gradient(to_bottom,#80808012_1px,transparent_1px)] bg-[size:24px_24px]"></div>
+                            {item.mockup}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
               </div>
             </div>
           </section>
 
           {/* SECTION 3: FEATURE HIGHLIGHTS */}
-          <section className="py-12">
+          <section className="py-24 view-fade-in">
             <div className="px-6">
-              <div className="text-center mb-16">
-                <h2 className="text-3xl font-bold mb-4">Enterprise-Grade Security</h2>
-                <p className="text-muted-foreground max-w-2xl mx-auto text-lg">
+              <div className="text-center mb-20">
+                <h2 className="text-4xl md:text-5xl font-bold mb-6 tracking-tight">Enterprise-Grade Security</h2>
+                <p className="text-muted-foreground/80 max-w-3xl mx-auto text-xl font-medium">
                   Designed for modern compliance architectures and decentralized trust.
                 </p>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-6xl mx-auto">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-7xl mx-auto">
                 {features.map((feature) => (
-                  <Card key={feature.title} className="p-8 hover:border-primary/40 transition-all hover:shadow-xl hover:-translate-y-1 bg-card/50 backdrop-blur-sm border-border/50">
+                  <Card key={feature.title} className="p-10 hover:border-white/20 transition-all duration-500 hover:shadow-[0_20px_50px_rgba(0,0,0,0.5)] hover:-translate-y-2 bg-gradient-to-b from-card to-card/50 border-white/5 rounded-[2rem]">
                     <div className="flex flex-col items-start text-left">
-                      <div className="h-14 w-14 rounded-xl bg-gradient-to-br from-primary/20 to-indigo-500/20 flex items-center justify-center mb-6">
-                        <feature.icon className="h-7 w-7 text-primary" />
+                      <div className="h-16 w-16 rounded-2xl bg-primary/5 flex items-center justify-center mb-8 border border-white/5 shadow-inner">
+                        <feature.icon className="h-8 w-8 text-primary/80" />
                       </div>
-                      <h3 className="text-xl font-bold mb-3">{feature.title}</h3>
-                      <p className="text-muted-foreground leading-relaxed">{feature.description}</p>
+                      <h3 className="text-2xl font-bold mb-4 tracking-tight">{feature.title}</h3>
+                      <p className="text-lg text-muted-foreground/70 leading-relaxed font-medium">{feature.description}</p>
                     </div>
                   </Card>
                 ))}
@@ -209,88 +422,105 @@ const IndexPage = () => {
           </section>
 
           {/* SECTION 6: SECURITY ARCHITECTURE */}
-          <section className="py-16 bg-muted/30 rounded-3xl border border-border/50 mx-6">
-            <div className="max-w-5xl mx-auto px-6">
-              <div className="text-center mb-12">
-                <h2 className="text-3xl font-bold mb-4">Under The Hood</h2>
-                <p className="text-muted-foreground text-lg">A defense-in-depth approach to document privacy.</p>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-12">
-                <div className="text-center">
-                  <div className="mx-auto w-16 h-16 rounded-full bg-blue-500/10 flex items-center justify-center mb-4">
-                    <Lock className="w-8 h-8 text-blue-500" />
-                  </div>
-                  <h4 className="text-lg font-bold mb-2">E2E Encryption</h4>
-                  <p className="text-sm text-muted-foreground">AES-GCM encryption applied client-side before uploading. The server never sees your unencrypted data.</p>
+          <section className="py-32 view-fade-in">
+            <div className="max-w-6xl mx-auto px-6 rounded-[3rem] bg-card/10 border border-white/5 py-24 shadow-inner relative overflow-hidden">
+              <div className="absolute inset-0 bg-gradient-to-b from-primary/5 to-transparent pointer-events-none"></div>
+              <div className="relative z-10">
+                <div className="text-center mb-20">
+                  <h2 className="text-4xl md:text-5xl font-bold mb-6 tracking-tight">Security Architecture</h2>
+                  <p className="text-muted-foreground/80 text-xl font-medium">A defense-in-depth approach to document privacy.</p>
                 </div>
-                <div className="text-center">
-                  <div className="mx-auto w-16 h-16 rounded-full bg-purple-500/10 flex items-center justify-center mb-4">
-                    <Cpu className="w-8 h-8 text-purple-500" />
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-16">
+                  <div className="text-center group">
+                    <div className="mx-auto w-20 h-20 rounded-3xl bg-blue-500/10 flex items-center justify-center mb-8 border border-blue-500/20 group-hover:scale-110 transition-transform duration-500">
+                      <Lock className="w-10 h-10 text-blue-500" />
+                    </div>
+                    <h4 className="text-2xl font-bold mb-4 tracking-tight">E2E Encryption</h4>
+                    <p className="text-lg text-muted-foreground/70 leading-relaxed font-medium">
+                      <strong className="text-foreground font-semibold">AES-GCM</strong> encryption applied client-side before uploading. The server never sees your unencrypted data.
+                    </p>
                   </div>
-                  <h4 className="text-lg font-bold mb-2">Zero-Knowledge Proofs</h4>
-                  <p className="text-sm text-muted-foreground">Circom/SnarkJS generates local proofs that redactions were applied properly without leaking the redacted text.</p>
-                </div>
-                <div className="text-center">
-                  <div className="mx-auto w-16 h-16 rounded-full bg-emerald-500/10 flex items-center justify-center mb-4">
-                    <Database className="w-8 h-8 text-emerald-500" />
+                  <div className="text-center group">
+                    <div className="mx-auto w-20 h-20 rounded-3xl bg-purple-500/10 flex items-center justify-center mb-8 border border-purple-500/20 group-hover:scale-110 transition-transform duration-500">
+                      <Cpu className="w-10 h-10 text-purple-500" />
+                    </div>
+                    <h4 className="text-2xl font-bold mb-4 tracking-tight">Zero-Knowledge</h4>
+                    <p className="text-lg text-muted-foreground/70 leading-relaxed font-medium">
+                      <strong className="text-foreground font-semibold">zk-SNARKs</strong> generate local proofs that redactions were applied properly without leaking hidden text.
+                    </p>
                   </div>
-                  <h4 className="text-lg font-bold mb-2">Blockchain Anchoring</h4>
-                  <p className="text-sm text-muted-foreground">Keccak256 hashes of the file and proof are written to smart contracts, creating an immutable timeline.</p>
+                  <div className="text-center group">
+                    <div className="mx-auto w-20 h-20 rounded-3xl bg-emerald-500/10 flex items-center justify-center mb-8 border border-emerald-500/20 group-hover:scale-110 transition-transform duration-500">
+                      <Database className="w-10 h-10 text-emerald-500" />
+                    </div>
+                    <h4 className="text-2xl font-bold mb-4 tracking-tight">On-Chain Anchors</h4>
+                    <p className="text-lg text-muted-foreground/70 leading-relaxed font-medium">
+                      <strong className="text-foreground font-semibold">Keccak256</strong> hashes of the file and proof are written to smart contracts for an immutable timeline.
+                    </p>
+                  </div>
                 </div>
               </div>
             </div>
           </section>
 
           {/* SECTION 7: TECH STACK */}
-          <section className="py-16 text-center">
+          <section className="py-24 text-center view-fade-in">
             <div className="max-w-4xl mx-auto px-6">
-              <p className="text-sm font-bold uppercase tracking-widest text-muted-foreground mb-8">Powered by Modern Technologies</p>
-              <div className="flex flex-wrap justify-center gap-6 opacity-60 grayscale hover:grayscale-0 transition-all duration-500">
-                <div className="flex items-center gap-2 px-4 py-2 border rounded-full bg-card"><CodeSquare className="w-5 h-5"/> React</div>
-                <div className="flex items-center gap-2 px-4 py-2 border rounded-full bg-card"><TerminalSquare className="w-5 h-5"/> TypeScript</div>
-                <div className="flex items-center gap-2 px-4 py-2 border rounded-full bg-card"><Server className="w-5 h-5"/> Python FastApi</div>
-                <div className="flex items-center gap-2 px-4 py-2 border rounded-full bg-card"><Database className="w-5 h-5"/> IPFS</div>
-                <div className="flex items-center gap-2 px-4 py-2 border rounded-full bg-card"><Component className="w-5 h-5"/> Circom (ZK)</div>
-                <div className="flex items-center gap-2 px-4 py-2 border rounded-full bg-card"><GitBranch className="w-5 h-5"/> Solidity</div>
+              <p className="text-sm font-bold uppercase tracking-[0.3em] text-muted-foreground/40 mb-12">Powered by Modern Technologies</p>
+              <div className="flex flex-wrap justify-center gap-4 opacity-50 grayscale hover:grayscale-0 hover:opacity-100 transition-all duration-700">
+                {[
+                  { icon: CodeSquare, label: "React" },
+                  { icon: TerminalSquare, label: "TypeScript" },
+                  { icon: Server, label: "FastAPI" },
+                  { icon: Database, label: "IPFS" },
+                  { icon: Component, label: "Circom" },
+                  { icon: GitBranch, label: "Solidity" }
+                ].map((tech) => (
+                  <div key={tech.label} className="flex items-center gap-3 px-6 py-3 border border-white/5 rounded-full bg-white/[0.02] shadow-sm text-sm font-semibold">
+                    <tech.icon className="w-4 h-4"/> {tech.label}
+                  </div>
+                ))}
               </div>
             </div>
           </section>
 
           {/* SECTION 5 & 8: FINAL CTA & DEMO CALLOUT */}
-          <section className="py-24 relative overflow-hidden rounded-[3rem] bg-gradient-to-b from-primary/5 to-primary/10 border border-primary/20 mx-6 shadow-2xl">
-            <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-5 mix-blend-overlay"></div>
-            <div className="relative px-6 z-10">
-              <div className="max-w-3xl mx-auto text-center">
-                <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-primary/20 text-primary mb-8 shadow-inner shadow-primary/30 text-3xl">
-                  🚀
-                </div>
-                <h2 className="text-4xl md:text-5xl font-bold mb-6">
-                  Ready to secure your documents?
-                </h2>
-                <p className="text-xl text-muted-foreground mb-10 leading-relaxed">
-                  Experience the full power of BlockVault instantly. Our interactive demo requires <strong className="text-foreground font-semibold">no wallet installation</strong> and zero commitments.
-                </p>
-                <div className="flex flex-col sm:flex-row justify-center gap-4">
-                  <Button
-                    size="lg"
-                    onClick={() => navigate("/demo")}
-                    className="h-16 px-10 text-xl font-bold gap-3 shadow-xl shadow-primary/30 hover:-translate-y-1 transition-transform w-full sm:w-auto"
-                  >
-                    Launch Demo Now
-                    <ArrowRight className="h-6 w-6" />
-                  </Button>
-                  {!isAuthenticated && (
-                     <Button
-                     size="lg"
-                     variant="outline"
-                     onClick={handleQuickConnect}
-                     disabled={loading}
-                     className="h-16 px-8 text-xl font-medium gap-3 bg-background/80 backdrop-blur-sm w-full sm:w-auto"
-                   >
-                     <Wallet className="h-6 w-6" />
-                     {loading ? 'Connecting...' : 'Connect Wallet'}
-                   </Button>
-                  )}
+          <section className="py-32 view-fade-in">
+            <div className="relative overflow-hidden rounded-[4rem] bg-gradient-to-b from-primary/5 to-primary/[0.08] border border-white/10 mx-6 shadow-3xl">
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-primary/5 via-transparent to-transparent opacity-50"></div>
+              <div className="relative px-6 py-24 z-10">
+                <div className="max-w-4xl mx-auto text-center">
+                  <div className="inline-flex items-center justify-center w-24 h-24 rounded-3xl bg-primary/10 text-primary mb-10 shadow-2xl border border-white/10 text-4xl">
+                    ⚡
+                  </div>
+                  <h2 className="text-5xl md:text-7xl font-bold mb-10 tracking-tighter">
+                    Ready to secure <br className="md:hidden" /> your documents?
+                  </h2>
+                  <p className="text-xl md:text-2xl text-muted-foreground/80 mb-14 leading-relaxed max-w-3xl mx-auto font-medium">
+                    Experience the full power of BlockVault instantly. Our interactive demo requires <strong className="text-foreground font-semibold">no setup</strong> and zero commitments.
+                  </p>
+                  <div className="flex flex-col sm:flex-row justify-center gap-6">
+                    <Button
+                      size="lg"
+                      onClick={() => navigate("/demo")}
+                      className="h-16 px-12 text-xl font-bold gap-3 shadow-[0_0_30px_hsl(var(--primary)/0.2)] hover:shadow-[0_0_50px_hsl(var(--primary)/0.4)] hover:-translate-y-1 transition-all w-full sm:w-auto rounded-full"
+                    >
+                      Launch Demo Now
+                      <ArrowRight className="h-6 w-6" />
+                    </Button>
+                    {!isAuthenticated && (
+                      <Button
+                        size="lg"
+                        variant="outline"
+                        onClick={handleQuickConnect}
+                        disabled={loading}
+                        className="h-16 px-10 text-xl font-semibold gap-3 border-white/10 bg-white/5 backdrop-blur-md rounded-full hover:bg-white/10 transition-colors w-full sm:w-auto"
+                      >
+                        <Wallet className="h-6 w-6" />
+                        {loading ? 'Connecting...' : 'Connect Wallet'}
+                      </Button>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>

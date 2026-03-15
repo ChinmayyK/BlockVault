@@ -703,7 +703,7 @@ export const FileList: React.FC<FileListProps> = React.memo(({
         }}
         className={`group relative cursor-pointer border ${isSelected
           ? 'border-accent-blue/70 ring-2 ring-accent-blue/40 shadow-[0_0_35px_hsl(var(--accent-blue-glow))]'
-          : 'border-borderAccent/20'
+          : 'border-border dark:border-borderAccent/20'
           } bg-card transition-all animate-in fade-in slide-in-from-bottom-4 duration-500`}
         style={{ animationDelay: `${Math.min(index, 20) * 50}ms`, animationFillMode: 'both' }}
       >
@@ -721,7 +721,7 @@ export const FileList: React.FC<FileListProps> = React.memo(({
                     className="font-semibold text-foreground group-hover:text-primary transition-colors max-w-[calc(100%-60px)]"
                   />
                   {user?.role && (
-                    <span className="px-2 py-0.5 text-[10px] uppercase font-bold tracking-wider rounded bg-primary/20 text-primary border border-primary/30 flex-shrink-0">
+                    <span className="px-2 py-0.5 text-[10px] uppercase font-bold tracking-wider rounded bg-slate-200 text-slate-700 border border-slate-300 dark:bg-primary/20 dark:text-primary dark:border-primary/30 flex-shrink-0">
                       {user.role}
                     </span>
                   )}
@@ -731,12 +731,12 @@ export const FileList: React.FC<FileListProps> = React.memo(({
                   <div className="relative group inline-block mt-2">
                     <span
                       className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold cursor-default ${proofStatus === 'verified'
-                        ? 'bg-emerald-500/15 text-emerald-400'
+                        ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-400'
                         : proofStatus === 'failed'
-                          ? 'bg-rose-500/15 text-rose-400'
+                          ? 'bg-rose-100 text-rose-800 dark:bg-rose-500/15 dark:text-rose-400'
                         : proofStatus === 'pending'
-                          ? 'bg-sky-500/15 text-sky-300'
-                          : 'bg-amber-500/15 text-amber-400'
+                          ? 'bg-sky-100 text-sky-800 dark:bg-sky-500/15 dark:text-sky-300'
+                          : 'bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-400'
                         }`}
                     >
                       {proofStatus === 'verified'
@@ -863,7 +863,7 @@ export const FileList: React.FC<FileListProps> = React.memo(({
           event.preventDefault();
           handleDownload(shareId, share);
         }}
-        className="cursor-pointer group border border-borderAccent/20 transition-all animate-in fade-in slide-in-from-bottom-4 duration-500"
+        className="cursor-pointer group border border-border dark:border-borderAccent/20 transition-all animate-in fade-in slide-in-from-bottom-4 duration-500"
         style={{ animationDelay: `${Math.min(index, 20) * 50}ms`, animationFillMode: 'both' }}
       >
         <div className="p-5">
@@ -970,12 +970,12 @@ export const FileList: React.FC<FileListProps> = React.memo(({
               </div>
               <div className="absolute inset-0 bg-gradient-to-br from-primary-500 to-accent-500 rounded-3xl blur-3xl opacity-40 animate-glow-pulse" />
             </div>
-            <h3 className="text-3xl font-bold text-white mb-4 text-gradient">No Shares Yet</h3>
-            <p className="text-text-secondary max-w-lg mx-auto text-lg leading-relaxed mb-8">
+            <h3 className="text-3xl font-bold text-foreground mb-4 text-gradient">No Shares Yet</h3>
+            <p className="text-muted-foreground max-w-lg mx-auto text-lg leading-relaxed mb-8">
               Files you share with others will appear here. Start sharing to see your active shares.
             </p>
             <div className="flex flex-col items-center gap-4 max-w-md mx-auto">
-              <p className="text-sm text-slate-400">
+              <p className="text-sm text-muted-foreground">
                 Share files securely with team members, clients, or external parties with controlled access and expiration dates.
               </p>
             </div>
@@ -1089,7 +1089,7 @@ export const FileList: React.FC<FileListProps> = React.memo(({
                     placeholder="Search files by name, folder, or user..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full pl-9 pr-4 py-2 text-sm bg-card border border-border/60 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 text-foreground"
+                    className="w-full pl-9 pr-4 py-2 text-sm bg-card border border-border rounded-lg focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary text-foreground placeholder:text-slate-400"
                 />
             </div>
         </div>

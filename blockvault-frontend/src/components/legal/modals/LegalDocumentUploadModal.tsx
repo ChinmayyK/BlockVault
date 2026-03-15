@@ -14,9 +14,10 @@ import { cn } from '@/lib/utils';
 interface LegalDocumentUploadModalProps {
   onClose: () => void;
   onSuccess: () => void;
+  inline?: boolean;
 }
 
-export const LegalDocumentUploadModal: React.FC<LegalDocumentUploadModalProps> = ({ onClose, onSuccess }) => {
+export const LegalDocumentUploadModal: React.FC<LegalDocumentUploadModalProps> = ({ onClose, onSuccess, inline = false }) => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [passphrase, setPassphrase] = useState('');
   const [loading, setLoading] = useState(false);
@@ -156,6 +157,7 @@ export const LegalDocumentUploadModal: React.FC<LegalDocumentUploadModalProps> =
       subtitle="Upload a document to your legal workspace"
       onClose={onClose}
       widthClassName="max-w-xl"
+      inline={inline}
       footer={
         <>
           <Button
@@ -168,7 +170,6 @@ export const LegalDocumentUploadModal: React.FC<LegalDocumentUploadModalProps> =
           {selectedFile && (
             <Button
               onClick={handleUpload}
-              loading={loading}
               disabled={!passphrase || loading}
               variant="modal-primary"
             >

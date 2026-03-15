@@ -1,16 +1,28 @@
 import { ReactNode } from "react";
 import { Sidebar } from "./Sidebar";
 import { TopBar } from "./TopBar";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface MainLayoutProps {
   children: ReactNode;
 }
 
 export function MainLayout({ children }: MainLayoutProps) {
+  const { user } = useAuth();
+  const isDemoMode = user?.address === 'demo_user';
+
   return (
     <div className="min-h-screen w-full bg-background">
       <Sidebar />
       <TopBar />
+      {isDemoMode && (
+        <div className="fixed top-0 left-0 right-0 z-[60] flex items-center justify-center pointer-events-none">
+          <div className="mt-1 pointer-events-auto rounded-full border border-amber-500/40 bg-amber-950/80 px-4 py-1 text-xs font-medium text-amber-300 backdrop-blur-sm shadow-lg shadow-amber-900/20">
+            <span className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse" />
+            Demo Mode — Simulated Environment
+          </div>
+        </div>
+      )}
       <main
         className="pt-16 transition-[padding-left] duration-200"
         data-layout="content"

@@ -84,18 +84,53 @@ def _ensure_indexes(db: Database) -> None:
         db["users"].create_index("address", name="idx_users_address", unique=True, background=True)
         db["anchored_hashes"].create_index("sha256", name="idx_anchored_sha256", unique=True, background=True)
         db["audit_anchors"].create_index([("timestamp", -1)], name="idx_audit_anchors_ts", background=True)
+
+        # --- New: Organization & Workspace indexes ---
+        db["org_members"].create_index(
+            [("org_id", 1), ("wallet_address", 1)],
+            unique=True, background=True, name="idx_org_members_unique",
+        )
+        db["org_members"].create_index(
+            "wallet_address", background=True, name="idx_org_members_wallet",
+        )
+        db["workspaces"].create_index("owner_wallet", background=True, name="idx_ws_owner")
+        db["workspaces"].create_index("org_id", background=True, name="idx_ws_org")
+        db["workspace_members"].create_index(
+            [("workspace_id", 1), ("wallet_address", 1)],
+            unique=True, background=True, name="idx_ws_members_unique",
+        )
+        db["workspace_members"].create_index(
+            "wallet_address", background=True, name="idx_ws_members_wallet",
+        )
+        db["file_permissions"].create_index(
+            [("file_id", 1), ("wallet_address", 1)],
+            unique=True, background=True, name="idx_file_perms_unique",
+        )
+
         logger.info("MongoDB indexes ensured.")
     except Exception as exc:
         logger.warning("Failed to create indexes (non-fatal): %s", exc)
 
 
 def _seed_default_data(db: Database) -> None:
-    """Seed default data (compliance profiles, etc.)."""
+    """Seed default data and run migrations."""
     try:
         from blockvault.core.compliance_profiles import seed_compliance_profiles
         seed_compliance_profiles(db)
     except Exception as exc:
         logger.warning("Failed to seed default data (non-fatal): %s", exc)
+
+    # Migrate: set platform_role = "USER" on existing users without one
+    try:
+        result = db["users"].update_many(
+            {"platform_role": {"$exists": False}},
+            {"$set": {"platform_role": "USER"}},
+        )
+        if result.modified_count > 0:
+            logger.info("Migrated %d users to platform_role=USER", result.modified_count)
+    except Exception as exc:
+        logger.warning("User role migration failed (non-fatal): %s", exc)
+
 
 def get_db() -> Database:
     """Return the shared database handle.

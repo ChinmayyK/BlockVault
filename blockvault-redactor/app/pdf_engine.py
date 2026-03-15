@@ -118,55 +118,80 @@ def extract_text_with_positions(pdf_bytes: bytes) -> List[dict]:
 
 def analyze_pdf(pdf_bytes: bytes) -> List[Entity]:
     """Detect entities in a PDF with bounding box information."""
-    # We use PyMuPDF's search_for underneath to handle token fragmentation
-    # but first we need to find what strings to look for using the pipeline.
     pages = extract_text_with_positions(pdf_bytes)
-    all_entities: List[Entity] = []
+    
+    # Concatenate all text to find entities with cross-page context
+    full_text = "\\n\\n".join(p["text"] for p in pages)
+    global_entities = detect_entities(full_text)
+    
+    # We only need the unique texts and their types to search per page
+    unique_terms = {}
+    for e in global_entities:
+        t_lower = e.text.lower()
+        if len(t_lower) < 3: # Skip very short matches for global search to avoid false positives
+            continue
+        if t_lower not in unique_terms or e.score > unique_terms[t_lower].score:
+            unique_terms[t_lower] = e
 
+    all_entities: List[Entity] = []
     doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+
+    # Sort terms longest first to overlap correctly
+    sorted_terms = sorted(unique_terms.values(), key=lambda e: len(e.text), reverse=True)
 
     for page_info in pages:
         page_num = page_info["page"]
-        text = page_info["text"]
         words = page_info["words"]
-
-        # Detect entities in the extracted logical text
-        entities = detect_entities(text)
-
-        # Map entities to precise bounding boxes using PyMuPDF's search_for
-        # which natively handles cross-token layout merges
         page = doc[page_num - 1]
         
-        for ent in entities:
-            ent.page = page_num
+        seen_rects = []
+        
+        for term_ent in sorted_terms:
             # 1. Try PyMuPDF native search (works for standard PDFs with text layers)
-            instances = page.search_for(ent.text)
+            instances = page.search_for(term_ent.text)
             
+            # If search_for misses exact casing, we can fallback or it might already be case-insensitive
+            # (PyMuPDF search_for is case insensitive by default!)
+            
+            matched_rects = []
             if instances:
-                rect = instances[0]
-                ent.bbox = [round(rect.x0, 2), round(rect.y0, 2), round(rect.x1, 2), round(rect.y1, 2)]
+                matched_rects = instances
             else:
                 # 2. Fallback for OCR: Find matching words in our extracted 'words' list
                 # This handles scanned documents where search_for() returns empty
-                ent_words = ent.text.split()
-                matched_rects = []
+                ent_words = term_ent.text.lower().split()
+                if not ent_words:
+                    continue
                 
                 # Simple greedy match: find the individual words and union their bounding boxes
-                for w in ent_words:
-                    for extracted_word in words:
-                        if w in extracted_word["text"] or extracted_word["text"] in w:
-                            matched_rects.append(extracted_word["bbox"])
-                            break  # Move to next word in entity
-                            
-                if matched_rects:
-                    x0 = min(r[0] for r in matched_rects)
-                    y0 = min(r[1] for r in matched_rects)
-                    x1 = max(r[2] for r in matched_rects)
-                    y1 = max(r[3] for r in matched_rects)
-                    ent.bbox = [round(x0, 2), round(y0, 2), round(x1, 2), round(y1, 2)]
-
-            all_entities.append(ent)
+                # (For multi-word, we just collect rects near each other or just all matches)
+                for extracted_word in words:
+                    ew_lower = extracted_word["text"].lower()
+                    if any(w in ew_lower for w in ent_words):
+                        matched_rects.append(fitz.Rect(extracted_word["bbox"]))
             
+            for rect in matched_rects:
+                # Deduplication logic: ensure we don't add overlapping rects
+                overlap = False
+                for r in seen_rects:
+                    # Intersection over self area check
+                    intersect = rect.intersect(r)
+                    if intersect.get_area() > 0.5 * rect.get_area():
+                        overlap = True
+                        break
+                
+                if not overlap:
+                    seen_rects.append(rect)
+                    all_entities.append(Entity(
+                        text=term_ent.text,
+                        entity_type=term_ent.entity_type,
+                        start=-1, end=-1, 
+                        page=page_num,
+                        bbox=[round(rect.x0, 2), round(rect.y0, 2), round(rect.x1, 2), round(rect.y1, 2)],
+                        score=term_ent.score,
+                        source="consistency"
+                    ))
+
     doc.close()
     return all_entities
 

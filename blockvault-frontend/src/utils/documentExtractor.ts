@@ -32,18 +32,12 @@ export async function extractDocumentText(
   const fileType = file.type || getFileTypeFromName(fileName || '');
   const fileExt = fileName?.split('.').pop()?.toLowerCase() || '';
   
-  console.log(`📄 Extracting text from file: ${fileName}`);
-  console.log(`   Type: ${fileType}, Extension: ${fileExt}`);
-  
   if (fileType === 'application/pdf' || fileExt === 'pdf') {
-    console.log('   → Extracting as PDF');
     return await extractPdfText(file);
   } else if (fileExt === 'docx' || fileExt === 'doc' || 
              fileType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
-    console.log('   → Extracting as DOCX');
     return await extractDocxText(file);
   } else {
-    console.log('   → Extracting as plain text');
     return await extractPlainText(file);
   }
 }
@@ -53,7 +47,6 @@ export async function extractDocumentText(
  */
 async function extractPlainText(file: File | Blob): Promise<DocumentContent> {
   const text = await file.text();
-  console.log(`   ✅ Extracted ${text.length} characters from text file`);
   
   return {
     text,
@@ -67,20 +60,13 @@ async function extractPlainText(file: File | Blob): Promise<DocumentContent> {
  */
 async function extractDocxText(file: File | Blob): Promise<DocumentContent> {
   try {
-    console.log('   📦 Extracting text from DOCX using mammoth.js...');
-    
-    // Use mammoth.js for proper DOCX extraction
     const mammoth = await import('mammoth');
     const arrayBuffer = await file.arrayBuffer();
     
     const result = await mammoth.extractRawText({ arrayBuffer });
     const text = result.value;
     
-    console.log(`   ✅ Extracted ${text.length} characters from DOCX`);
-    console.log(`   📝 First 200 chars: ${text.substring(0, 200)}`);
-    
     if (text.length < 10) {
-      console.warn('   ⚠️ Extracted text is very short, DOCX might be empty or corrupted');
       throw new Error('Extracted text too short');
     }
     
@@ -90,25 +76,20 @@ async function extractDocxText(file: File | Blob): Promise<DocumentContent> {
     };
   } catch (error) {
     console.error('❌ Error extracting DOCX text with mammoth:', error);
-    console.log('   🔄 Trying simple XML extraction fallback...');
-    
     // Fallback: simple XML parsing
     try {
       const arrayBuffer = await file.arrayBuffer();
       const uint8Array = new Uint8Array(arrayBuffer);
       
-      // Convert to string and extract alphanumeric content
       const decoder = new TextDecoder('utf-8', { fatal: false });
       const rawText = decoder.decode(uint8Array);
       
-      // Extract readable text (remove XML tags and binary data)
       const cleanText = rawText
-        .replace(/<[^>]*>/g, ' ') // Remove XML tags
-        .replace(/[\x00-\x1F\x7F-\x9F]/g, '') // Remove control characters
-        .replace(/\s+/g, ' ') // Normalize whitespace
+        .replace(/<[^>]*>/g, ' ')
+        .replace(/[\x00-\x1F\x7F-\x9F]/g, '')
+        .replace(/\s+/g, ' ')
         .trim();
       
-      console.log(`   ✅ Fallback extraction: ${cleanText.length} characters`);
       
       return {
         text: cleanText,

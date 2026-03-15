@@ -49,7 +49,7 @@ const LazyShareModal = lazy(() =>
   import("@/components/file/ShareModal").then((module) => ({ default: module.ShareModal }))
 );
 
-export default function DashboardPage() {
+export default function FilesPage() {
   const { user } = useAuth();
   const {
     files,
@@ -230,11 +230,17 @@ export default function DashboardPage() {
     { label: "Active Shares", value: totalShares.toString(), icon: Users },
   ];
 
+  const currentViewMode = selectedDetailsFile ? 'list' : viewMode;
+
   return (
     <div className="flex h-[calc(100vh-6rem)] -mt-6 -mx-6 overflow-hidden animate-in fade-in duration-500">
       {/* Explorer Pane */}
       <div
-        className="flex-1 overflow-y-auto px-6 pt-6 pb-12 space-y-6 custom-scrollbar relative"
+        className={
+          selectedDetailsFile
+            ? "hidden lg:block w-[320px] flex-shrink-0 overflow-y-auto px-4 pt-6 pb-12 space-y-4 custom-scrollbar relative bg-card/10 border-r border-borderAccent/10"
+            : "flex-1 overflow-y-auto px-6 pt-6 pb-12 space-y-6 custom-scrollbar relative"
+        }
         onDragEnter={handleDragEnter}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
@@ -275,104 +281,210 @@ export default function DashboardPage() {
         </button>
       )}
 
-      {/* Overview Banner */}
-      <section className="rounded-3xl border border-borderAccent/30 bg-card-muted/60 p-6 shadow-[0_35px_70px_-28px_rgba(15,23,42,0.65)] backdrop-blur">
-        <div className="flex flex-col gap-6 lg:flex-row lg:items-center">
-          <div className="flex-1 space-y-4">
-            <div>
-              <p className="text-xs uppercase tracking-[0.3em] text-muted-foreground/80">
-                Overview
-              </p>
-              <h1 className="text-3xl font-semibold">Secure File Storage</h1>
-              <p className="text-sm text-muted-foreground mt-2">
-                Manage uploads, shares, and blockchain notarization from a single workspace.
-              </p>
-            </div>
-            <div className="flex flex-wrap items-center gap-3">
-              <Button className="gap-2" onClick={() => setShowUpload(true)}>
-                <Upload className="h-4 w-4" />
-                Upload File
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="gap-2 text-muted-foreground hover:text-foreground"
-                onClick={() => setShowFilters((prev) => !prev)}
-              >
-                <Filter className="h-4 w-4" />
-                {showFilters ? "Hide Filters" : "Quick Filters"}
-              </Button>
-            </div>
+      {/* Toolbar */}
+      <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+        <div className="flex items-center gap-2">
+          {!selectedDetailsFile && <FolderOpen className="w-5 h-5 text-muted-foreground hidden sm:block" />}
+          <h1 className="text-xl font-semibold">{selectedDetailsFile ? "Files" : "File Explorer"}</h1>
+        </div>
+        <div className="flex-1" />
+        <div className="relative w-full max-w-xs sm:max-w-xs">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Search files..."
+            className="pl-10"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
+          <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1 text-xs text-muted-foreground pointer-events-none">
+            <Command className="w-3 h-3" />
+            <span>K</span>
           </div>
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          className="gap-2"
+          onClick={() => setShowFilters(!showFilters)}
+        >
+          <Filter className="h-4 w-4" />
+          Filter
+        </Button>
+        {hasActiveFilters && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="gap-2"
+            onClick={clearFilters}
+          >
+            <X className="h-4 w-4" />
+            Clear
+          </Button>
+        )}
+        <div className="flex items-center gap-1 rounded-lg border border-border p-1 hidden sm:flex">
+          <Button
+            variant={currentViewMode === "grid" ? "secondary" : "ghost"}
+            size="sm"
+            onClick={() => setViewMode("grid")}
+            className="h-8 px-3"
+            disabled={!!selectedDetailsFile}
+          >
+            <Grid3x3 className="h-4 w-4" />
+          </Button>
+          <Button
+            variant={currentViewMode === "list" ? "secondary" : "ghost"}
+            size="sm"
+            onClick={() => setViewMode("list")}
+            className="h-8 px-3"
+            disabled={!!selectedDetailsFile}
+          >
+            <List className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
 
-          <GlowingDivider className="hidden lg:block mx-10 self-stretch" />
-          <GlowingDivider orientation="horizontal" className="lg:hidden my-4" />
+      {/* Tabs */}
+      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as any)}>
+        <TabsList>
+          <TabsTrigger value="my-files" className="gap-2">
+            <FolderOpen className="h-4 w-4" />
+            My Files
+            <span className="ml-1 px-2 py-0.5 bg-muted rounded-full text-xs">{totalFiles}</span>
+          </TabsTrigger>
+          <TabsTrigger
+            value="shared"
+            className="gap-2"
+            onMouseEnter={handleSharedTabHover}
+            onFocus={handleSharedTabHover}
+          >
+            <Download className="h-4 w-4" />
+            Shared with Me
+            <span className="ml-1 px-2 py-0.5 bg-muted rounded-full text-xs">{totalSharedFiles}</span>
+          </TabsTrigger>
+          <TabsTrigger
+            value="shares"
+            className="gap-2"
+            onMouseEnter={handleSharesTabHover}
+            onFocus={handleSharesTabHover}
+          >
+            <Share2 className="h-4 w-4" />
+            My Shares
+            <span className="ml-1 px-2 py-0.5 bg-muted rounded-full text-xs">{totalShares}</span>
+          </TabsTrigger>
+        </TabsList>
 
-          <div className="w-full max-w-sm rounded-2xl border border-borderAccent/25 bg-card/70 p-5 shadow-[0_25px_60px_-30px_rgba(59,130,246,0.45)]">
-            <div className="flex items-center justify-between gap-3">
+        <TabsContent value="my-files" className="mt-4">
+          {loading && !files?.length ? (
+            <FileListSkeleton count={6} />
+          ) : (
+            <FileList
+              files={sortedFiles}
+              onShare={(fileId) => {
+                setSelectedFile(fileId);
+                setShowShareModal(true);
+              }}
+              type="my-files"
+              viewMode={currentViewMode}
+              hasMore={hasMoreFiles}
+              onLoadMore={loadMoreFiles}
+              isLoadingMore={loadingMoreFiles}
+              onFileSelect={setSelectedDetailsFile}
+            />
+          )}
+        </TabsContent>
+
+        <TabsContent value="shared" className="mt-4">
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
               <div>
-                <p className="text-xs uppercase tracking-[0.25em] text-muted-foreground">
-                  Wallet
-                </p>
-                <p className="mt-1 font-semibold">
-                  {user?.address ? `${user.address.slice(0, 6)}...${user.address.slice(-4)}` : "Not connected"}
-                </p>
+                <h3 className="text-lg font-semibold">Shared with Me</h3>
+                <p className="text-sm text-muted-foreground">Files that others have shared with you</p>
               </div>
-              {user?.address && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleCopyAddress}
-                  className="gap-2 border-borderAccent/50 text-xs"
-                >
-                  {copiedAddress ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-                  {copiedAddress ? "Copied" : "Copy"}
-                </Button>
-              )}
+              <Button
+                onClick={handleRefreshSharedFiles}
+                disabled={refreshingShared}
+                variant="outline"
+                size="sm"
+                className="gap-2"
+              >
+                <RefreshCw className={`w-4 h-4 ${refreshingShared ? 'animate-spin' : ''}`} />
+                {refreshingShared ? 'Refreshing...' : 'Refresh'}
+              </Button>
             </div>
-            <div className="mt-4 grid grid-cols-2 gap-4 text-sm">
-              {[
-                { label: "Files", value: totalFiles.toString() },
-                { label: "Shared", value: totalSharedFiles.toString() },
-                { label: "Shares", value: totalShares.toString() },
-                { label: "Storage", value: formatFileSize(totalSize) },
-              ].map((item) => (
-                <div key={item.label}>
-                  <p className="text-xs uppercase tracking-wide text-muted-foreground">{item.label}</p>
-                  <p className="text-lg font-semibold">{item.value}</p>
-                </div>
-              ))}
-            </div>
+            {loading && !sharedFiles?.length ? (
+              <FileListSkeleton count={4} />
+            ) : (
+              <FileList
+                files={filteredSharedFiles}
+                type="shared"
+                viewMode={currentViewMode}
+                hasMore={hasMoreSharedFiles}
+                onLoadMore={loadMoreSharedFiles}
+                isLoadingMore={loadingMoreSharedFiles}
+                onFileSelect={setSelectedDetailsFile}
+              />
+            )}
           </div>
-        </div>
-      </section>
+        </TabsContent>
 
-      <GlowingSeparator className="opacity-70" />
-
-      {/* Stats */}
-      {showStats && (
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          {stats.map((stat) => (
-            <Card key={stat.label} className="p-5 hover:border-primary/50 transition-all hover:-translate-y-1 cursor-pointer">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground">{stat.label}</p>
-                  <p className="text-2xl font-semibold mt-2">{stat.value}</p>
-                </div>
-                <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center">
-                  <stat.icon className="h-6 w-6 text-primary" />
-                </div>
-              </div>
-            </Card>
-          ))}
-        </div>
-      )}
+        <TabsContent value="shares" className="mt-4">
+          {loading && !outgoingShares?.length ? (
+            <FileListSkeleton count={4} />
+          ) : (
+            <FileList
+              shares={filteredOutgoingShares}
+              type="shares"
+              viewMode={currentViewMode}
+              hasMore={hasMoreOutgoingShares}
+              onLoadMore={loadMoreOutgoingShares}
+              isLoadingMore={loadingMoreOutgoingShares}
+              onFileSelect={setSelectedDetailsFile}
+            />
+          )}
+        </TabsContent>
+      </Tabs>
 
       {/* Upload Modal */}
       {showUpload && (
         <FileUpload onClose={() => setShowUpload(false)} />
       )}
+
+      {/* Share Modal */}
+      {showShareModal && selectedFile && (
+        <Suspense fallback={<div className="fixed inset-0 z-50 flex items-center justify-center bg-background/70">Loading share modal…</div>}>
+          <LazyShareModal
+            fileId={selectedFile}
+            onClose={() => {
+              setShowShareModal(false);
+              setSelectedFile(null);
+            }}
+          />
+        </Suspense>
+      )}
       </div>
+
+      {/* Document Workspace (Preview & Inspector) */}
+      {selectedDetailsFile && (
+        <>
+          {/* Document Preview Pane */}
+          <div className="hidden md:block flex-1 min-w-0 z-10 relative shadow-2xl bg-zinc-950/20">
+            <FilePreviewPanel 
+              file={selectedDetailsFile} 
+              onClose={() => setSelectedDetailsFile(null)}
+            />
+          </div>
+
+          {/* Inspector Panel */}
+          <aside className="w-full sm:w-[360px] flex-shrink-0 border-l border-borderAccent/10 bg-card/30 overflow-y-auto custom-scrollbar shadow-[-10px_0_30px_-15px_rgba(0,0,0,0.5)]">
+            <div className="p-4 sm:p-6 min-h-full">
+              <FileDetailsPanel 
+                file={selectedDetailsFile} 
+                onClose={() => setSelectedDetailsFile(null)} 
+              />
+            </div>
+          </aside>
+        </>
+      )}
     </div>
   );
 }

@@ -34,7 +34,6 @@ export const decryptPassphrase = (encrypted: string): string => {
 export const storeLegalDocumentKey = (fileId: string, passphrase: string): void => {
   const encrypted = encryptPassphrase(passphrase);
   localStorage.setItem(`legal_doc_key_${fileId}`, encrypted);
-  console.log(`Stored encrypted key for legal document: ${fileId}`);
 };
 
 // Retrieve document key
@@ -45,16 +44,13 @@ export const getLegalDocumentKey = (fileId: string): string | null => {
     // Fallback to general file keys for backward compatibility
     const fallback = localStorage.getItem(`file_key_${fileId}`);
     if (fallback) {
-      console.log(`Found fallback key for ${fileId}`);
       return fallback;
     }
-    console.warn(`No key found for document: ${fileId}`);
     return null;
   }
 
   try {
     const passphrase = decryptPassphrase(encrypted);
-    console.log(`Retrieved decrypted key for ${fileId}`);
     return passphrase;
   } catch (error) {
     console.error(`Failed to decrypt key for ${fileId}:`, error);
@@ -65,7 +61,6 @@ export const getLegalDocumentKey = (fileId: string): string | null => {
 // Remove document key
 export const removeLegalDocumentKey = (fileId: string): void => {
   localStorage.removeItem(`legal_doc_key_${fileId}`);
-  console.log(`Removed key for legal document: ${fileId}`);
 };
 
 // Check if document has stored key

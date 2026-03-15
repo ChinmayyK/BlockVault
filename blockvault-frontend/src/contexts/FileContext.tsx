@@ -128,6 +128,9 @@ export const FileProvider: React.FC<FileProviderProps> = ({ children }) => {
     ? `${initialUser?.address || 'unknown'}:${initialUser?.jwt}`
     : 'guest';
 
+  // Demo mode detection
+  const isDemoMode = initialUser?.address === 'demo_user';
+
   // Only consider the session authenticated once a JWT is present.
   const [isAuthenticated, setIsAuthenticated] = useState(initialIsAuthenticated);
   const [authScope, setAuthScope] = useState(initialAuthScope);
@@ -202,9 +205,15 @@ export const FileProvider: React.FC<FileProviderProps> = ({ children }) => {
         params.append('after', String(pageParam));
       }
       try {
-        const response = await apiClient.get(`/files/?${params.toString()}`, {
+        const endpoint = isDemoMode ? `/demo/files` : `/files/?${params.toString()}`;
+        const response = await apiClient.get(endpoint, {
           skipGlobalLoader: true
         } as any);
+        // Normalize demo response shape to match real response
+        if (isDemoMode) {
+          const data = response.data;
+          return { items: data.files || [], next_after: null, has_more: false };
+        }
         return response.data;
       } catch (error: any) {
         if (error.response?.status === 401) {
@@ -216,7 +225,7 @@ export const FileProvider: React.FC<FileProviderProps> = ({ children }) => {
     initialPageParam: undefined as number | undefined,
     getNextPageParam: (lastPage) =>
       lastPage?.has_more ? lastPage?.next_after : undefined,
-    enabled: isAuthenticated,
+    enabled: isAuthenticated || isDemoMode,
     staleTime: 60000,
     gcTime: 5 * 60 * 1000,
     refetchOnWindowFocus: false,
@@ -233,6 +242,10 @@ export const FileProvider: React.FC<FileProviderProps> = ({ children }) => {
   } = useInfiniteQuery({
     queryKey: ['sharedFiles', authScope],
     queryFn: async ({ pageParam }) => {
+      // In demo mode, return empty immediately
+      if (isDemoMode) {
+        return { shares: [], next_after: null, has_more: false };
+      }
       const params = new URLSearchParams({ limit: '50' });
       if (pageParam) {
         params.append('after', String(pageParam));
@@ -252,7 +265,7 @@ export const FileProvider: React.FC<FileProviderProps> = ({ children }) => {
     initialPageParam: undefined as number | undefined,
     getNextPageParam: (lastPage) =>
       lastPage?.has_more ? lastPage?.next_after : undefined,
-    enabled: isAuthenticated,
+    enabled: isAuthenticated && !isDemoMode,
     staleTime: 60000,
     gcTime: 5 * 60 * 1000,
     refetchOnWindowFocus: false,
@@ -269,6 +282,10 @@ export const FileProvider: React.FC<FileProviderProps> = ({ children }) => {
   } = useInfiniteQuery({
     queryKey: ['outgoingShares', authScope],
     queryFn: async ({ pageParam }) => {
+      // In demo mode, return empty immediately
+      if (isDemoMode) {
+        return { shares: [], next_after: null, has_more: false };
+      }
       const params = new URLSearchParams({ limit: '50' });
       if (pageParam) {
         params.append('after', String(pageParam));
@@ -288,7 +305,7 @@ export const FileProvider: React.FC<FileProviderProps> = ({ children }) => {
     initialPageParam: undefined as number | undefined,
     getNextPageParam: (lastPage) =>
       lastPage?.has_more ? lastPage?.next_after : undefined,
-    enabled: isAuthenticated,
+    enabled: isAuthenticated && !isDemoMode,
     staleTime: 60000,
     gcTime: 5 * 60 * 1000,
     refetchOnWindowFocus: false,
@@ -389,18 +406,15 @@ export const FileProvider: React.FC<FileProviderProps> = ({ children }) => {
   });
 
   const uploadFile = useCallback(async (file: any, passphrase: string, aad?: string, folder?: string) => {
+    if (isDemoMode) {
+      toast('Upload simulated in Demo Mode', { icon: '🔒' });
+      return;
+    }
     return await uploadFileMutation.mutateAsync({ file, passphrase, aad, folder });
-  }, [uploadFileMutation]);
+  }, [uploadFileMutation, isDemoMode]);
 
   const downloadFile = useCallback(async (fileId: string, passphrase: string, isSharedFile: boolean = false, encryptedKey?: string, fileName?: string) => {
     try {
-      console.log('📥 downloadFile called', {
-        fileId,
-        isSharedFile,
-        hasEncryptedKey: !!encryptedKey,
-        hasFileName: !!fileName,
-      });
-
       let actualPassphrase = passphrase;
 
       // For shared files, decrypt the encrypted key to get the original passphrase
@@ -434,7 +448,6 @@ export const FileProvider: React.FC<FileProviderProps> = ({ children }) => {
         loadingMessage: 'Decrypting & Downloading...',
       } as any);
       const blob = response.data;
-      console.log('✅ Blob created', { size: blob.size, type: blob.type });
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -455,6 +468,10 @@ export const FileProvider: React.FC<FileProviderProps> = ({ children }) => {
 
   const deleteFileMutation = useMutation({
     mutationFn: async (fileId: string) => {
+      if (isDemoMode) {
+        toast('Deletion not allowed in Demo Mode', { icon: '🔒' });
+        return;
+      }
       try {
         await apiClient.delete(`/files/${fileId}`, {
           loadingMessage: 'Deleting file...',

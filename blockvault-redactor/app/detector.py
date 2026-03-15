@@ -698,6 +698,7 @@ def detect_entities(
       6. Context score boost
       7. Deduplication
       8. Confidence filtering
+      9. Cross-document consistency
 
     Returns deduplicated entities sorted by position.
     """
@@ -733,4 +734,49 @@ def detect_entities(
     # 8. Confidence filter
     all_entities = [e for e in all_entities if e.score >= min_confidence]
 
-    return all_entities
+    # 9. Cross-document consistency and case normalization
+    # Find unique sensitive texts and their best type/score
+    unique_texts = {}
+    for e in all_entities:
+        t_lower = e.text.lower()
+        if t_lower not in unique_texts or e.score > unique_texts[t_lower].score:
+            unique_texts[t_lower] = Entity(
+                text=e.text, # Keep original case
+                entity_type=e.entity_type,
+                start=-1, end=-1, score=e.score, source=e.source
+            )
+
+    # Now find all occurrences of these normalized texts
+    consistent_entities = []
+    seen_intervals = []
+
+    # Sort texts by length descending to match longest spans first
+    sorted_texts = sorted(unique_texts.values(), key=lambda x: len(x.text), reverse=True)
+
+    for rep_ent in sorted_texts:
+        pattern = re.compile(re.escape(rep_ent.text), re.IGNORECASE)
+        for m in pattern.finditer(text):
+            start, end = m.span()
+            matched_text = m.group()
+            
+            # Check overlap
+            overlap = False
+            for (s, e) in seen_intervals:
+                if max(start, s) < min(end, e):
+                    overlap = True
+                    break
+            
+            if not overlap:
+                seen_intervals.append((start, end))
+                consistent_entities.append(Entity(
+                    text=matched_text,
+                    entity_type=rep_ent.entity_type,
+                    start=start,
+                    end=end,
+                    score=rep_ent.score,
+                    source="consistency"
+                ))
+
+    # Re-sort consistently by position
+    consistent_entities.sort(key=lambda e: e.start)
+    return consistent_entities

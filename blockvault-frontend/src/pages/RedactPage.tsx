@@ -3,6 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { toast } from "react-hot-toast";
 import { Shield, ArrowLeft, Loader2, Lock, CheckCircle2, Square, Hand, Undo, Redo, Eye, Trash, Download, FileText, Search, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { formatError } from "@/utils/errorMessages";
 
 import { useFiles } from "@/contexts/FileContext";
 import { analyzeRedaction, applyRedaction, verifyRedaction, searchRedactionMatches } from "@/api/redactor";
@@ -426,17 +427,19 @@ export default function RedactPage() {
             setIsAnalyzed(true);
             toast.success(`Found ${annotated.length} potential entities.`, { id: loadingToast });
         } catch (error) {
-            console.error(error);
-            toast.error("Analysis failed. Backend might be unreachable.", { id: loadingToast });
+            const friendlyMessage = formatError(error);
+            toast.error(friendlyMessage, { id: loadingToast });
         } finally {
             setIsAnalyzing(false);
         }
     };
 
-    // Auto-analyze after document unlock
+    // Auto-analyze after document unlock (fail silently — user can retry with Analyze button)
     useEffect(() => {
         if (documentUrl && confirmedPassphrase && !isAnalyzed && !isAnalyzing && !redactionComplete) {
-            handleAnalyze();
+            handleAnalyze().catch(() => {
+                // Silently fail auto-analyze — user can click "Analyze" manually
+            });
         }
     }, [documentUrl, confirmedPassphrase, isAnalyzed, isAnalyzing, redactionComplete]);
 

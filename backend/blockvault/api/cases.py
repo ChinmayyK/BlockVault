@@ -349,3 +349,4 @@ def add_document_to_case(case_id: str):
         abort(404, "Case not found")
     log_event("document_linked_to_case", target_id=case_id, details={"file_id": file_id})
     return jsonify({"message": "Document added to case successfully"}), 201
+

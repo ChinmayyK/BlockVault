@@ -32,6 +32,7 @@ celery.conf.update(
     task_acks_late=True,
     task_reject_on_worker_lost=True,
     worker_prefetch_multiplier=1,
+    task_always_eager=os.environ.get("FLASK_ENV", "development") == "development",
     # Soft/hard time limits so a stuck IPFS or web3 call doesn't block forever
     task_soft_time_limit=120,
     task_time_limit=180,

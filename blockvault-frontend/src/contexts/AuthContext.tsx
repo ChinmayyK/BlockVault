@@ -18,6 +18,7 @@ interface User {
   platform_role?: string;
   organizations?: OrgMembership[];
   workspaces?: WorkspaceMembership[];
+  wrapped_vault_key?: string;
 }
 
 interface AuthContextType {
@@ -186,12 +187,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         const userData = await response.json();
         console.log('Token is valid, user fully authenticated. Role:', userData.role);
 
-        // Update the role in state and storage if it changed or was missing
-        if (userData.role) {
-          const role = userData.role.toUpperCase();
+        // Update the role and vault state in storage if it changed
+        if (userData.role || userData.wrapped_vault_key !== undefined) {
+          const role = userData.role ? userData.role.toUpperCase() : undefined;
           setUser(prev => {
             if (!prev) return null;
-            const updated = { ...prev, role };
+            const updated = { ...prev };
+            if (role) updated.role = role;
+            if (userData.wrapped_vault_key !== undefined) updated.wrapped_vault_key = userData.wrapped_vault_key;
             writeStoredUser(updated);
             return updated;
           });
@@ -470,7 +473,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       }
 
       const loginData = await loginResponse.json();
-      const { token, rsa_private_key, rsa_public_key, message, platform_role, role, organizations, workspaces } = loginData;
+      const { token, rsa_private_key, rsa_public_key, message, platform_role, role, organizations, workspaces, wrapped_vault_key } = loginData;
 
       // Update user with JWT and full role context
       const updatedUser = {
@@ -480,6 +483,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         platform_role: platform_role || role || 'USER',
         organizations: organizations || [],
         workspaces: workspaces || [],
+        wrapped_vault_key: wrapped_vault_key || undefined,
       };
       setUser(updatedUser);
 

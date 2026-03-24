@@ -228,6 +228,7 @@ def login():
         "role": platform_role.value,
         "organizations": orgs,
         "workspaces": workspaces,
+        "wrapped_vault_key": user_doc.get("wrapped_vault_key") if user_doc else None,
     }
     
     # Return RSA keys to frontend for local storage (only on first generation or retrieval)
@@ -244,9 +245,15 @@ def login():
 def me():  # type: ignore
     from flask import request as _req
     from ..core.security import role_name
+    address = getattr(_req, "address")
     role = getattr(_req, "role", 2)
+    
+    # Needs to eagerly fetch the user document to load Vault status 
+    user_doc = _users_collection().find_one({"address": address}) or {}
+    
     return {
-        "address": getattr(_req, "address"),
+        "address": address,
         "role": role_name(role),
         "role_value": int(role),
+        "wrapped_vault_key": user_doc.get("wrapped_vault_key"),
     }

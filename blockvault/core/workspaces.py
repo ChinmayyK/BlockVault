@@ -60,6 +60,7 @@ class WorkspaceStore:
         owner_wallet: str,
         org_id: Optional[str] = None,
         workspace_id: Optional[str] = None,
+        encrypted_workspace_key: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Create a new workspace. Creator becomes WORKSPACE_OWNER."""
         wallet = owner_wallet.strip().lower()
@@ -76,7 +77,7 @@ class WorkspaceStore:
         self.collection.insert_one(doc)
 
         # Auto-add creator as WORKSPACE_OWNER
-        self.add_member(ws_id, wallet, WorkspaceRole.WORKSPACE_OWNER)
+        self.add_member(ws_id, wallet, WorkspaceRole.WORKSPACE_OWNER, encrypted_workspace_key)
 
         logger.info("Created workspace '%s' (id=%s) for %s", name, ws_id, wallet)
         return doc
@@ -91,7 +92,7 @@ class WorkspaceStore:
     # Personal Vault
     # ------------------------------------------------------------------
 
-    def ensure_personal_vault(self, wallet_address: str) -> Dict[str, Any]:
+    def ensure_personal_vault(self, wallet_address: str, encrypted_workspace_key: Optional[str] = None) -> Dict[str, Any]:
         """Get or create the user's personal vault workspace."""
         wallet = wallet_address.strip().lower()
 
@@ -109,6 +110,7 @@ class WorkspaceStore:
             name=PERSONAL_VAULT_NAME,
             owner_wallet=wallet,
             org_id=None,
+            encrypted_workspace_key=encrypted_workspace_key,
         )
 
     # ------------------------------------------------------------------
@@ -120,6 +122,7 @@ class WorkspaceStore:
         workspace_id: str,
         wallet_address: str,
         role: WorkspaceRole = WorkspaceRole.WORKSPACE_VIEWER,
+        encrypted_workspace_key: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Add a member to a workspace (or update role if exists)."""
         wallet = wallet_address.strip().lower()
@@ -130,6 +133,9 @@ class WorkspaceStore:
             "role": role.value,
             "joined_at": now,
         }
+        if encrypted_workspace_key:
+            doc["encrypted_workspace_key"] = encrypted_workspace_key
+            
         self.members_collection.update_one(
             {"workspace_id": workspace_id, "wallet_address": wallet},
             {"$set": doc},
@@ -188,5 +194,6 @@ class WorkspaceStore:
                     "name": ws.get("name", ""),
                     "org_id": ws.get("org_id"),
                     "role": m["role"],
+                    "encrypted_workspace_key": m.get("encrypted_workspace_key"),
                 })
         return result

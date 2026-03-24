@@ -10,16 +10,17 @@ import {
   MoreVertical,
   Lock,
   Loader2,
-  Shield,
   Search,
   Eraser,
 } from 'lucide-react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useFiles } from '@/contexts/FileContext';
+import { useVault } from '@/contexts/VaultContext';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { ScrollingText } from '@/components/ui/ScrollingText';
 import { LegalModalFrame } from '@/components/legal/modals/LegalModalFrame';
+import { PassphraseModal } from './PassphraseModal';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { verifyRedaction } from '@/api/redactor';
@@ -55,6 +56,7 @@ export const FileList: React.FC<FileListProps> = React.memo(({
   onFileSelect,
 }) => {
   const { downloadFile, deleteFile, revokeShare } = useFiles();
+  const { isVaultUnlocked, vaultKey } = useVault();
   const { user } = useAuth();
   const navigate = useNavigate();
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -285,14 +287,25 @@ export const FileList: React.FC<FileListProps> = React.memo(({
       return;
     }
 
-    // For own files, ask for passphrase
+    // If vault is unlocked, download directly using the session vault key
+    if (isVaultUnlocked) {
+      const downloadName = file?.original_name || file?.name || file?.file_name;
+      try {
+        await downloadFile(fileId, undefined, false, undefined, downloadName);
+      } catch (err) {
+        console.error('Vault auto-download failed:', err);
+      }
+      return;
+    }
+
+    // For own files, ask for passphrase if vault is locked
     setSelectedFile(fileId);
     setSelectedFileData(file);
     setShowPassphraseModal(true);
   };
 
-  const confirmDownload = async () => {
-    if (selectedFile && passphrase) {
+  const confirmDownloadWithPassphrase = async (p: string) => {
+    if (selectedFile) {
       const isSharedFile = selectedFileData && selectedFileData.encrypted_key;
       const encryptedKey = selectedFileData?.encrypted_key;
       const actualFileId = isSharedFile ? selectedFileData?.file_id : selectedFile;
@@ -301,11 +314,17 @@ export const FileList: React.FC<FileListProps> = React.memo(({
         selectedFileData?.original_name ||
         selectedFileData?.name ||
         selectedFileData?.file_name;
-      await downloadFile(actualFileId, passphrase, isSharedFile, encryptedKey, downloadName);
+      await downloadFile(actualFileId, p, isSharedFile, encryptedKey, downloadName);
       setShowPassphraseModal(false);
       setSelectedFile(null);
       setSelectedFileData(null);
       setPassphrase('');
+    }
+  };
+
+  const confirmDownload = async () => {
+    if (selectedFile && passphrase) {
+      await confirmDownloadWithPassphrase(passphrase);
     }
   };
 
@@ -367,29 +386,6 @@ export const FileList: React.FC<FileListProps> = React.memo(({
     if (['zip', 'rar', '7z', 'tar', 'gz'].includes(ext || '')) return 'from-orange-500 to-yellow-500';
     return 'from-secondary-500 to-secondary-600';
   };
-
-  const passphraseFooter = (
-    <>
-      <Button
-        variant="ghost"
-        onClick={() => {
-          setShowPassphraseModal(false);
-          setPassphrase('');
-        }}
-        className="text-slate-300 hover:text-white"
-      >
-        Cancel
-      </Button>
-      <Button
-        onClick={confirmDownload}
-        disabled={!passphrase}
-        className="min-w-[160px] gap-2"
-      >
-        <Download className="h-4 w-4" />
-        Download
-      </Button>
-    </>
-  );
 
   // Virtual scrolling setup - enable for both list and grid views when there are many items
   const baseItems = type === 'shares' ? (shares || []).filter(share => share && typeof share === 'object') : (files || []).filter(file => file && typeof file === 'object');
@@ -701,10 +697,10 @@ export const FileList: React.FC<FileListProps> = React.memo(({
           event.preventDefault();
           handleDownload(fileId, file);
         }}
-        className={`group relative cursor-pointer border ${isSelected
-          ? 'border-accent-blue/70 ring-2 ring-accent-blue/40 shadow-[0_0_35px_hsl(var(--accent-blue-glow))]'
-          : 'border-border dark:border-borderAccent/20'
-          } bg-card transition-all animate-in fade-in slide-in-from-bottom-4 duration-500`}
+        className={`group relative cursor-pointer border rounded-2xl ${isSelected
+          ? 'border-primary ring-2 ring-primary/40 shadow-[0_0_20px_rgba(var(--primary),0.15)] bg-primary/5'
+          : 'border-border/50 bg-card hover:border-primary/30 hover:shadow-xl hover:shadow-primary/5 hover:-translate-y-1 hover:scale-[1.01]'
+          } transition-all duration-300 ease-out`}
         style={{ animationDelay: `${Math.min(index, 20) * 50}ms`, animationFillMode: 'both' }}
       >
         <div className="p-5">
@@ -715,37 +711,37 @@ export const FileList: React.FC<FileListProps> = React.memo(({
                 <div className="absolute inset-0 rounded-xl bg-white/40 opacity-0 group-hover:opacity-100 transition-opacity dark:bg-white/10" />
               </div>
               <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-1">
+                <div className="flex items-center gap-2 mb-0.5">
                   <ScrollingText
                     text={fileName}
-                    className="font-semibold text-foreground group-hover:text-primary transition-colors max-w-[calc(100%-60px)]"
+                    className="text-base font-bold text-foreground group-hover:text-primary transition-colors truncate"
                   />
-                  {user?.role && (
-                    <span className="px-2 py-0.5 text-[10px] uppercase font-bold tracking-wider rounded bg-slate-200 text-slate-700 border border-slate-300 dark:bg-primary/20 dark:text-primary dark:border-primary/30 flex-shrink-0">
-                      {user.role}
-                    </span>
-                  )}
+                  <div className="flex items-center gap-1.5 opacity-60">
+                    <Lock className="w-3 h-3 text-primary" />
+                  </div>
                 </div>
-                <p className="text-xs text-muted-foreground font-medium">{formatFileSize(fileSize)}</p>
+                <div className="flex items-center gap-2 text-[11px] text-muted-foreground font-medium mb-3">
+                  <span>{formatFileSize(fileSize)}</span>
+                  <span className="opacity-30">•</span>
+                  <span>{formatDate(createdAt)}</span>
+                </div>
+
                 {type === 'my-files' && (
-                  <div className="relative group inline-block mt-2">
+                  <div className="relative group inline-block">
                     <span
-                      className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold cursor-default ${proofStatus === 'verified'
-                        ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-400'
+                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold cursor-default border transition-colors ${proofStatus === 'verified'
+                        ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20'
                         : proofStatus === 'failed'
-                          ? 'bg-rose-100 text-rose-800 dark:bg-rose-500/15 dark:text-rose-400'
+                          ? 'bg-rose-500/10 text-rose-500 border-rose-500/20'
                         : proofStatus === 'pending'
-                          ? 'bg-sky-100 text-sky-800 dark:bg-sky-500/15 dark:text-sky-300'
-                          : 'bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-400'
+                          ? 'bg-sky-500/10 text-sky-500 border-sky-500/20'
+                          : 'bg-amber-500/10 text-amber-500 border-amber-500/20'
                         }`}
                     >
-                      {proofStatus === 'verified'
-                        ? '✓ Proof Verified'
-                        : proofStatus === 'failed'
-                          ? '⚠ Proof Failed'
-                          : proofStatus === 'pending'
-                            ? '⏳ Proof Generating'
-                            : '⚠ Proof Missing'}
+                      {proofStatus === 'verified' && <><span className="w-1 h-1 rounded-full bg-emerald-500 animate-pulse" /> Verified</>}
+                      {proofStatus === 'failed' && <><Trash2 className="w-3 h-3" /> Proof Failed</>}
+                      {proofStatus === 'pending' && <><Loader2 className="w-3 h-3 animate-spin" /> Generating Proof</>}
+                      {proofStatus === 'missing' && <><Clock className="w-3 h-3" /> Proof Missing</>}
                     </span>
                     {proofStatus === 'pending' && file?.redaction_progress && (
                       <div className="absolute left-0 bottom-full mb-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none w-48 p-2.5 bg-slate-900 border border-slate-700/50 rounded-lg shadow-xl z-50">
@@ -783,63 +779,60 @@ export const FileList: React.FC<FileListProps> = React.memo(({
             </div>
           </div>
 
-          <div className="space-y-2">
-            <div className="flex items-center space-x-2 text-sm text-muted-foreground">
-              <Calendar className="w-3 h-3" />
-              <span>{formatDate(createdAt)}</span>
+          {folder && (
+            <div className="mt-2 flex items-center space-x-1.5 text-[10px] uppercase tracking-wider font-bold text-primary/70">
+              <span className="opacity-50">in</span>
+              <span className="bg-primary/5 px-1.5 py-0.5 rounded border border-primary/10">{folder}</span>
             </div>
-            {folder && (
-              <div className="flex items-center space-x-2 text-sm text-primary">
-                <span>📁</span>
-                <span>{folder}</span>
-              </div>
-            )}
-          </div>
+          )}
 
           {/* Quick Actions */}
-          <div className="grid grid-cols-2 gap-2 mt-5 pt-4 border-t border-border/40">
-            <Button
-              onClick={() => handleDownload(fileId, file)}
-              variant="ghost"
-              size="sm"
-              className="flex items-center justify-center gap-1.5 text-xs bg-muted/40 hover:bg-muted text-muted-foreground hover:text-foreground transition-all rounded-md h-8"
-            >
-              <Download className="w-3.5 h-3.5" />
-              Download
-            </Button>
-            {type === 'my-files' && onShare && canShare(user?.role) && (
-              <Button
-                onClick={() => onShare(fileId)}
-                variant="ghost"
-                size="sm"
-                className="flex items-center justify-center gap-1.5 text-xs bg-muted/40 hover:bg-muted text-muted-foreground hover:text-foreground transition-all rounded-md h-8"
-              >
-                <Share2 className="w-3.5 h-3.5" />
-                Share
-              </Button>
-            )}
+          <div className="flex flex-col gap-2 mt-5 pt-4 border-t border-border/10">
             {type === 'my-files' && canRedact(user?.role) && fileName.toLowerCase().endsWith('.pdf') && (
               <Button
                 onClick={() => navigate(user?.address === 'demo_user' ? `/demo/redact/${fileId}` : `/redact/${fileId}`)}
                 variant="ghost"
                 size="sm"
-                className="flex items-center justify-center gap-1.5 text-xs bg-primary/10 hover:bg-primary/20 text-primary transition-all rounded-md h-8 col-span-2"
+                disabled={proofStatus === 'pending'}
+                className="w-full flex items-center justify-center gap-2 text-xs font-bold bg-primary/10 hover:bg-primary/20 text-primary transition-all rounded-xl h-10 border border-primary/20"
               >
-                <Eraser className="w-3.5 h-3.5" />
+                <Eraser className="w-4 h-4" />
                 Redact Document
               </Button>
             )}
-            {type === 'shared' && canRevokeShare(user?.role) && (
+            <div className="grid grid-cols-2 gap-2">
               <Button
-                onClick={() => handleRevokeShare(file.share_id || file.id)}
+                onClick={() => handleDownload(fileId, file)}
                 variant="ghost"
                 size="sm"
-                className="flex items-center justify-center gap-1.5 text-xs bg-destructive/10 hover:bg-destructive/20 text-destructive transition-all rounded-md h-8 col-span-2"
+                className="flex items-center justify-center gap-1.5 text-[11px] font-semibold bg-muted/30 hover:bg-muted text-muted-foreground hover:text-foreground transition-all rounded-xl h-9"
               >
-                <Trash2 className="w-3.5 h-3.5" />
-                Revoke Access
+                <Download className="w-3.5 h-3.5" />
+                Download
               </Button>
-            )}
+              {type === 'my-files' && onShare && canShare(user?.role) && (
+                <Button
+                  onClick={() => onShare(fileId)}
+                  variant="ghost"
+                  size="sm"
+                  className="flex items-center justify-center gap-1.5 text-[11px] font-semibold bg-muted/30 hover:bg-muted text-muted-foreground hover:text-foreground transition-all rounded-xl h-9"
+                >
+                  <Share2 className="w-3.5 h-3.5" />
+                  Share
+                </Button>
+              )}
+              {type === 'shared' && canRevokeShare(user?.role) && (
+                <Button
+                  onClick={() => handleRevokeShare(file.share_id || file.id)}
+                  variant="ghost"
+                  size="sm"
+                  className="flex items-center justify-center gap-1.5 text-[11px] font-semibold bg-destructive/5 hover:bg-destructive/10 text-destructive transition-all rounded-xl h-9 col-span-2"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  Revoke Access
+                </Button>
+              )}
+            </div>
           </div>
 
         </div>
@@ -863,7 +856,7 @@ export const FileList: React.FC<FileListProps> = React.memo(({
           event.preventDefault();
           handleDownload(shareId, share);
         }}
-        className="cursor-pointer group border border-border dark:border-borderAccent/20 transition-all animate-in fade-in slide-in-from-bottom-4 duration-500"
+        className="cursor-pointer group relative border border-border/50 bg-card rounded-2xl transition-all duration-300 ease-out hover:border-primary/30 hover:shadow-xl hover:shadow-primary/5 hover:-translate-y-1 hover:scale-[1.01]"
         style={{ animationDelay: `${Math.min(index, 20) * 50}ms`, animationFillMode: 'both' }}
       >
         <div className="p-5">
@@ -876,11 +869,20 @@ export const FileList: React.FC<FileListProps> = React.memo(({
                 <div className="absolute inset-0 rounded-xl bg-white/10 opacity-0 group-hover:opacity-100 transition-opacity" />
               </div>
               <div className="flex-1 min-w-0">
-                <ScrollingText
-                  text={fileName}
-                  className="font-bold text-foreground mb-1 group-hover:text-primary transition-colors"
-                />
-                <p className="text-sm text-muted-foreground font-medium">Shared with recipient</p>
+                <div className="flex items-center gap-2 mb-0.5">
+                  <ScrollingText
+                    text={fileName}
+                    className="text-base font-bold text-foreground group-hover:text-primary transition-colors truncate"
+                  />
+                  <div className="flex items-center gap-1.5 opacity-60">
+                    <Share2 className="w-3 h-3 text-primary" />
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 text-[11px] text-muted-foreground font-medium">
+                  <span>Shared with recipient</span>
+                  <span className="opacity-30">•</span>
+                  <span>{formatDate(createdAt)}</span>
+                </div>
               </div>
             </div>
             <div className="relative z-10" onClick={(e) => e.stopPropagation()}>
@@ -1218,42 +1220,19 @@ export const FileList: React.FC<FileListProps> = React.memo(({
       {loadMoreSection}
       <div ref={loadMoreSentinelRef} className="h-1 w-full" aria-hidden />
 
-      {showPassphraseModal && (
-        <LegalModalFrame
-          icon={<Lock className="h-5 w-5 text-white" />}
-          title="Enter Encryption Passphrase"
-          subtitle="Authenticate access to download this encrypted file."
-          onClose={() => {
-            setShowPassphraseModal(false);
-            setPassphrase('');
-          }}
-          widthClassName="max-w-md"
-          contentClassName="space-y-6"
-          footer={passphraseFooter}
-          headerAccent="blue"
-        >
-          <div className="space-y-3">
-            <p className="text-sm text-slate-300">
-              Enter the passphrase that was used to encrypt this file. This ensures only authorized parties can decrypt the content locally.
-            </p>
-            <div className="relative">
-              <input
-                type="password"
-                placeholder="Enter passphrase"
-                value={passphrase}
-                onChange={(e) => setPassphrase(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && passphrase && confirmDownload()}
-                className="w-full rounded-xl border border-slate-700/60 bg-slate-900/80 px-4 py-3 text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-primary-500/60"
-                autoFocus
-              />
-              <Lock className="absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
-            </div>
-            <p className="text-xs text-slate-500">
-              If you can’t recall the original passphrase, contact the file owner or refer to your secure passphrase manager.
-            </p>
-          </div>
-        </LegalModalFrame>
-      )}
+      <PassphraseModal
+        isOpen={showPassphraseModal}
+        onClose={() => {
+          setShowPassphraseModal(false);
+          setPassphrase('');
+        }}
+        onConfirm={(p) => {
+          // Temporarily set passphrase for confirmDownload to work, 
+          // though it's better to pass it directly.
+          // For now, let's just pass it to confirmDownload directly.
+          void confirmDownloadWithPassphrase(p);
+        }}
+      />
 
       <ConfirmModal
         isOpen={confirmModal.isOpen}

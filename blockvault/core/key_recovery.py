@@ -155,3 +155,85 @@ def unwrap_file_key_with_wallet(wrapped_key_b64: str, private_key_hex: str) -> b
         return ecies_decrypt(private_key_hex, wrapped_key)
     except Exception as e:
         raise ValueError("ECIES decryption failed. Incorrect private key.") from e
+
+
+# ---------------------------------------------------------------------------
+# HKDF Wrapping (for magic-link / email sharing)
+# ---------------------------------------------------------------------------
+
+_HKDF_INFO = b"blockvault-magic-link-v1"
+
+
+def _hkdf_info(context: str = "") -> bytes:
+    """Build HKDF info tag with optional file-specific context for domain separation."""
+    if context:
+        return _HKDF_INFO + b":" + context.encode("utf-8")
+    return _HKDF_INFO
+
+
+def wrap_file_key_with_hkdf(file_key: bytes, secret: bytes, context: str = "") -> str:
+    """Wrap a file key using HKDF-derived key from a high-entropy secret.
+
+    Used for magic-link email shares where the secret is a 256-bit random
+    value placed in the URL fragment.  HKDF is chosen over Argon2 because
+    the input already has full entropy.
+
+    Args:
+        file_key: The 256-bit file encryption key.
+        secret: The 256-bit recipient secret (from URL fragment).
+        context: Optional domain-separation string (e.g. "file-share:{file_id}").
+
+    Returns:
+        Base64-encoded (salt ‖ nonce ‖ ciphertext+tag).
+    """
+    from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+    from cryptography.hazmat.primitives import hashes as _hashes
+
+    info = _hkdf_info(context)
+    salt = os.urandom(16)
+    derived_key = HKDF(
+        algorithm=_hashes.SHA256(),
+        length=32,
+        salt=salt,
+        info=info,
+    ).derive(secret)
+
+    wrapped = encrypt_with_aes_gcm(derived_key, file_key)
+    # Prepend salt so unwrap side can re-derive the same key
+    return base64.b64encode(salt + wrapped).decode("ascii")
+
+
+def unwrap_file_key_with_hkdf(wrapped_b64: str, secret: bytes, context: str = "") -> bytes:
+    """Unwrap a file key that was wrapped with HKDF.
+
+    Args:
+        wrapped_b64: Base64-encoded wrapped key from wrap_file_key_with_hkdf.
+        secret: The 256-bit recipient secret.
+        context: Must match the context used during wrapping.
+    """
+    from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+    from cryptography.hazmat.primitives import hashes as _hashes
+
+    try:
+        raw = base64.b64decode(wrapped_b64)
+    except Exception as e:
+        raise ValueError(f"Invalid base64 for wrapped key: {e}") from e
+
+    if len(raw) < 16:
+        raise ValueError("Wrapped key too short")
+
+    salt = raw[:16]
+    ciphertext_with_nonce = raw[16:]
+
+    info = _hkdf_info(context)
+    derived_key = HKDF(
+        algorithm=_hashes.SHA256(),
+        length=32,
+        salt=salt,
+        info=info,
+    ).derive(secret)
+
+    try:
+        return decrypt_with_aes_gcm(derived_key, ciphertext_with_nonce)
+    except Exception as e:
+        raise ValueError("HKDF unwrap failed. Incorrect secret.") from e

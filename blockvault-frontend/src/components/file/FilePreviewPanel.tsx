@@ -3,6 +3,8 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Lock, FileText, Download, Eye, ExternalLink, Loader2, File, Image as ImageIcon, Video, Music, Archive } from 'lucide-react';
 import { useFiles } from '@/contexts/FileContext';
+import { useVault } from '@/contexts/VaultContext';
+import { PassphraseModal } from './PassphraseModal';
 
 interface FilePreviewPanelProps {
   file: any;
@@ -11,7 +13,9 @@ interface FilePreviewPanelProps {
 
 export function FilePreviewPanel({ file, onClose }: FilePreviewPanelProps) {
   const { downloadFile } = useFiles();
+  const { isVaultUnlocked } = useVault();
   const [downloading, setDownloading] = useState(false);
+  const [showPassphraseModal, setShowPassphraseModal] = useState(false);
 
   const getFileIcon = (fileName: string) => {
     const ext = fileName.split('.').pop()?.toLowerCase() || '';
@@ -24,9 +28,41 @@ export function FilePreviewPanel({ file, onClose }: FilePreviewPanelProps) {
   };
 
   const handleDownloadPreview = async () => {
+    const fileId = file.file_id || file.id || file.share_id;
+    const fileName = file.file_name || file.name;
+    const isShared = !!file.encrypted_key;
+
+    if (isShared) {
+      setDownloading(true);
+      try {
+        await downloadFile(fileId, '', true, file.encrypted_key, fileName);
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setDownloading(false);
+      }
+    } else if (isVaultUnlocked) {
+      setDownloading(true);
+      try {
+        await downloadFile(fileId, undefined, false, undefined, fileName);
+      } catch (err) {
+        console.error('Vault auto-download failed:', err);
+      } finally {
+        setDownloading(false);
+      }
+    } else {
+      setShowPassphraseModal(true);
+    }
+  };
+
+  const onConfirmPassphrase = async (passphrase: string) => {
+    const fileId = file.file_id || file.id || file.share_id;
+    const fileName = file.file_name || file.name;
+    
     setDownloading(true);
     try {
-      await downloadFile(file.file_id || file.id || file.share_id, file.file_name || file.name);
+      await downloadFile(fileId, passphrase, false, undefined, fileName);
+      setShowPassphraseModal(false);
     } catch (err) {
       console.error(err);
     } finally {
@@ -89,6 +125,14 @@ export function FilePreviewPanel({ file, onClose }: FilePreviewPanelProps) {
 
         </div>
       </div>
+
+      <PassphraseModal 
+        isOpen={showPassphraseModal}
+        onClose={() => setShowPassphraseModal(false)}
+        onConfirm={onConfirmPassphrase}
+        isProcessing={downloading}
+        processingLabel="Downloading..."
+      />
     </div>
   );
 }

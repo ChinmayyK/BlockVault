@@ -32,9 +32,13 @@ def create_workspace():
     data = request.get_json(silent=True) or {}
     name = data.get("name")
     org_id = data.get("org_id")  # optional
+    encrypted_workspace_key = data.get("encrypted_workspace_key")
 
     if not name or not isinstance(name, str) or len(name.strip()) < 2:
         abort(400, "Workspace name is required (min 2 chars)")
+
+    if not encrypted_workspace_key or not isinstance(encrypted_workspace_key, str):
+        abort(400, "encrypted_workspace_key string is required")
 
     address = getattr(request, "address")
     store = _store()
@@ -43,6 +47,7 @@ def create_workspace():
         name=name.strip(),
         owner_wallet=address,
         org_id=org_id,
+        encrypted_workspace_key=encrypted_workspace_key,
     )
 
     return {
@@ -95,16 +100,20 @@ def add_member(workspace_id: str):
     data = request.get_json(silent=True) or {}
     wallet = data.get("wallet_address")
     role_str = data.get("role", "WORKSPACE_VIEWER")
+    encrypted_workspace_key = data.get("encrypted_workspace_key")
 
     if not wallet or not isinstance(wallet, str):
         abort(400, "wallet_address required")
+
+    if not encrypted_workspace_key or not isinstance(encrypted_workspace_key, str):
+        abort(400, "encrypted_workspace_key string is required")
 
     try:
         role = WorkspaceRole(role_str)
     except ValueError:
         abort(400, f"Invalid role: {role_str}")
 
-    store.add_member(workspace_id, wallet, role)
+    store.add_member(workspace_id, wallet, role, encrypted_workspace_key)
     return {"status": "ok", "wallet_address": wallet.lower(), "role": role.value}
 
 

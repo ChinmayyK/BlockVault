@@ -23,4 +23,3 @@ export interface RedactionResponse {
   redacted_by: string;
   anchor_tx?: string | null;
 }
-

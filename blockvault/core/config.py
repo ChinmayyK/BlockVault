@@ -32,6 +32,14 @@ class Config:
     s3_access_key: str | None = None
     s3_secret_key: str | None = None
     redactor_service_url: str | None = None
+    sendgrid_api_key: str | None = None
+    smtp_host: str | None = None
+    smtp_port: int = 587
+    smtp_user: str | None = None
+    smtp_pass: str | None = None
+    email_from: str = "noreply@blockvault.io"
+    frontend_url: str = "http://localhost:3000"
+    redis_url: str = "redis://localhost:6379/1"
 
 
 def load_config() -> Config:
@@ -58,6 +66,14 @@ def load_config() -> Config:
     s3_access_key = os.getenv("S3_ACCESS_KEY")
     s3_secret_key = os.getenv("S3_SECRET_KEY")
     redactor_service_url = os.getenv("REDACTOR_SERVICE_URL")
+    sendgrid_api_key = os.getenv("SENDGRID_API_KEY")
+    smtp_host = os.getenv("SMTP_HOST")
+    smtp_port = int(os.getenv("SMTP_PORT", "587"))
+    smtp_user = os.getenv("SMTP_USER")
+    smtp_pass = os.getenv("SMTP_PASS")
+    email_from = os.getenv("EMAIL_FROM", "noreply@blockvault.io")
+    frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
+    redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/1")
     return Config(
         env=env,
         debug=debug,
@@ -82,4 +98,12 @@ def load_config() -> Config:
         s3_access_key=s3_access_key,
         s3_secret_key=s3_secret_key,
         redactor_service_url=redactor_service_url,
+        sendgrid_api_key=sendgrid_api_key,
+        smtp_host=smtp_host,
+        smtp_port=smtp_port,
+        smtp_user=smtp_user,
+        smtp_pass=smtp_pass,
+        email_from=email_from,
+        frontend_url=frontend_url,
+        redis_url=redis_url,
     )

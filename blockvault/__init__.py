@@ -106,6 +106,13 @@ def create_app() -> Flask:
         S3_ACCESS_KEY=cfg.s3_access_key,
         S3_SECRET_KEY=cfg.s3_secret_key,
         REDACTOR_SERVICE_URL=cfg.redactor_service_url,
+        SENDGRID_API_KEY=cfg.sendgrid_api_key,
+        SMTP_HOST=cfg.smtp_host,
+        SMTP_PORT=cfg.smtp_port,
+        SMTP_USER=cfg.smtp_user,
+        SMTP_PASS=cfg.smtp_pass,
+        EMAIL_FROM=cfg.email_from,
+        FRONTEND_URL=cfg.frontend_url,
     )
 
     # -----------------------------------------------------------------
@@ -197,6 +204,12 @@ def create_app() -> Flask:
     limiter.limit("10/minute")(files_bp)
 
     # -----------------------------------------------------------------
+    # Redis rate limiter (for magic-link access endpoint)
+    # -----------------------------------------------------------------
+    from .core.rate_limiter import limiter as redis_limiter
+    redis_limiter.init(cfg.redis_url, fail_open=True)
+
+    # -----------------------------------------------------------------
     # Standard JSON error responses
     # -----------------------------------------------------------------
     @app.errorhandler(400)
@@ -234,6 +247,9 @@ def create_app() -> Flask:
 
     from .api.workspaces import bp as workspaces_bp
     app.register_blueprint(workspaces_bp, url_prefix="/workspaces")
+
+    from .api.access import bp as access_bp
+    app.register_blueprint(access_bp, url_prefix="/access")
 
     from .mock_cases import register_case_routes
     register_case_routes(app)
@@ -340,6 +356,17 @@ def create_app() -> Flask:
         r = jsonify({'pong': True})
         r.headers['X-Route'] = 'ping'
         return r
+
+    # -----------------------------------------------------------------
+    # CLI commands
+    # -----------------------------------------------------------------
+
+    @app.cli.command("cleanup-shares")
+    def cleanup_shares_cmd():
+        """Remove expired/consumed/revoked magic shares older than 30 days."""
+        from .api.access import cleanup_expired_shares
+        count = cleanup_expired_shares()
+        print(f"Cleaned up {count} expired magic share(s)")
 
     # -----------------------------------------------------------------
     # Debug / dev endpoints — ADMIN-only and disabled in production

@@ -608,7 +608,11 @@ def _deduplicate(entities: List[Entity]) -> List[Entity]:
     """Remove overlapping entities, preferring longer + higher-score matches."""
     if not entities:
         return []
-    entities.sort(key=lambda e: (e.start, -(e.end - e.start), -e.score))
+    # Prefer more specific (shorter) spans when entities overlap at the same
+    # location. This avoids a broad label-based match (e.g. "Contact: ...")
+    # from swallowing more precise regex-based entities like individual emails
+    # or credit cards which appear inside that span.
+    entities.sort(key=lambda e: (e.start, (e.end - e.start), -e.score))
     result: List[Entity] = []
     for ent in entities:
         if not result:
@@ -620,7 +624,9 @@ def _deduplicate(entities: List[Entity]) -> List[Entity]:
         else:
             len_last = last.end - last.start
             len_ent = ent.end - ent.start
-            if len_ent > len_last or (len_ent == len_last and ent.score > last.score):
+            # For overlapping entities, keep the more specific (shorter) span.
+            # If lengths are equal, keep the higher-confidence one.
+            if len_ent < len_last or (len_ent == len_last and ent.score > last.score):
                 result[-1] = ent
     return result
 

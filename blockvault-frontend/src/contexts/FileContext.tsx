@@ -5,6 +5,7 @@ import { getApiBase } from '@/lib/getApiBase';
 import { fetchWithTimeout } from '@/utils/fetchWithTimeout';
 import apiClient from '@/api/client';
 import { readStoredUser, clearStoredUser } from '@/utils/authStorage';
+import { useVault } from '@/contexts/VaultContext';
 
 interface File {
   id: string;
@@ -93,7 +94,7 @@ interface FileContextType {
   loadingMoreOutgoingShares: boolean;
   loading: boolean;
   error: string | null;
-  uploadFile: (file: any, passphrase: string, aad?: string, folder?: string) => Promise<any>;
+  uploadFile: (file: any, passphrase: string, onProgress?: (p: number, msg?: string) => void, aad?: string, folder?: string) => Promise<any>;
   downloadFile: (fileId: string, passphrase: string, isSharedFile?: boolean, encryptedKey?: string, fileName?: string) => Promise<void>;
   deleteFile: (fileId: string) => Promise<void>;
   shareFile: (fileId: string, recipientAddress: string, passphrase: string, isEmail?: boolean) => Promise<void>;
@@ -119,6 +120,7 @@ interface FileProviderProps {
 
 export const FileProvider: React.FC<FileProviderProps> = ({ children }) => {
   const queryClient = useQueryClient();
+  const { vaultKey } = useVault();
 
   const getStoredUser = () => readStoredUser<{ jwt?: string; address?: string }>();
 
@@ -367,22 +369,48 @@ export const FileProvider: React.FC<FileProviderProps> = ({ children }) => {
   }, [hasMoreFiles, fetchNextFilesPage]);
 
   const uploadFileMutation = useMutation({
-    mutationFn: async ({ file, passphrase, aad, folder }: { file: any; passphrase: string; aad?: string; folder?: string }) => {
+    mutationFn: async ({ file, passphrase, onProgress, aad, folder }: { file: any; passphrase?: string; onProgress?: (p: number, m?: string) => void; aad?: string; folder?: string }) => {
+      
+      const { encryptFileWithWorker } = await import('@/utils/cryptoWorker');
+
+      const cryptoKey = vaultKey || passphrase;
+      if (!cryptoKey) {
+        throw new Error("Vault is locked. Please unlock your Vault to encrypt files.");
+      }
+
+      // 1. Encrypt file client-side via Web Worker
+      const encryptedResult = await encryptFileWithWorker(
+        file,
+        cryptoKey,
+        aad,
+        (progress, msg) => {
+          if (onProgress) onProgress(progress * 0.9, msg); // Encryption covers 0-90%
+        }
+      );
+
+      if (onProgress) onProgress(92, "Preparing upload payload...");
+
       const formData = new FormData();
-      formData.append('file', file);
-      formData.append('key', passphrase);
+      formData.append('file', encryptedResult.encryptedBlob, file.name);
+      formData.append('wrapped_keys', JSON.stringify(encryptedResult.wrappedKeys));
+      
       if (aad) formData.append('aad', aad);
       if (folder) formData.append('folder', folder);
 
       try {
+        if (onProgress) onProgress(95, "Uploading to secure vault...");
         const response = await apiClient.post(`/files/`, formData, {
           headers: {
             'Content-Type': 'multipart/form-data',
           },
-          timeout: 60000,
+          timeout: 600000, // 10 minutes for large chunks
           loadingMessage: 'Encrypting and Uploading File...',
         } as any);
-        return response.data;
+        
+        if (onProgress) onProgress(100, "Complete!");
+        
+        // Return the server response plus the locally generated recovery key
+        return { ...response.data, recovery_key: encryptedResult.recoveryKey };
       } catch (error: any) {
         if (error.response?.status === 401) {
           clearStoredUser();
@@ -406,17 +434,20 @@ export const FileProvider: React.FC<FileProviderProps> = ({ children }) => {
     },
   });
 
-  const uploadFile = useCallback(async (file: any, passphrase: string, aad?: string, folder?: string) => {
+  const uploadFile = useCallback(async (file: any, passphrase?: string, onProgress?: (p: number, m?: string) => void, aad?: string, folder?: string) => {
     if (isDemoMode) {
       toast('Upload simulated in Demo Mode', { icon: '🔒' });
       return;
     }
-    return await uploadFileMutation.mutateAsync({ file, passphrase, aad, folder });
+    return await uploadFileMutation.mutateAsync({ file, passphrase, onProgress, aad, folder });
   }, [uploadFileMutation, isDemoMode]);
 
-  const downloadFile = useCallback(async (fileId: string, passphrase: string, isSharedFile: boolean = false, encryptedKey?: string, fileName?: string) => {
+  const downloadFile = useCallback(async (fileId: string, passphrase?: string, isSharedFile: boolean = false, encryptedKey?: string, fileName?: string) => {
     try {
-      let actualPassphrase = passphrase;
+      let actualPassphrase = vaultKey || passphrase;
+      if (!actualPassphrase && !isSharedFile) {
+        throw new Error("Vault is locked. Please unlock it to decrypt files.");
+      }
 
       // For shared files, decrypt the encrypted key to get the original passphrase
       if (isSharedFile && encryptedKey) {
@@ -448,13 +479,38 @@ export const FileProvider: React.FC<FileProviderProps> = ({ children }) => {
         responseType: 'blob',
         loadingMessage: 'Decrypting & Downloading...',
       } as any);
-      const blob = response.data;
+      
+      let blob = response.data;
+      
+      // E2EE Phase 1: Client-Side Decryption
+      const wrappedKeysJson = response.headers['x-wrapped-keys'];
+      if (wrappedKeysJson) {
+        const wrappedKeys = JSON.parse(wrappedKeysJson);
+        const aad = response.headers['x-file-aad'] || undefined;
+        
+        // Use the worker
+        const { decryptFileWithWorker } = await import('@/utils/cryptoWorker');
+        // Both owner and shared recipients use the same underlying passphrase logic for unwrapping
+        const decryptResult = await decryptFileWithWorker(
+          blob,
+          wrappedKeys.passphrase,
+          actualPassphrase,
+          aad
+        );
+        blob = decryptResult.decryptedBlob;
+      }
+      
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = (fileName && typeof fileName === 'string' && fileName.trim() !== '')
-        ? fileName
-        : `file_${fileId}`;
+      
+      // Clean up the ".enc" suffix if it exists
+      let finalName = (fileName && typeof fileName === 'string' && fileName.trim() !== '') ? fileName : `file_${fileId}`;
+      if (wrappedKeysJson && finalName.endsWith('.enc')) {
+        finalName = finalName.replace(/\.enc$/, '');
+      }
+      
+      a.download = finalName;
       document.body.appendChild(a);
       a.click();
       window.URL.revokeObjectURL(url);
@@ -518,14 +574,42 @@ export const FileProvider: React.FC<FileProviderProps> = ({ children }) => {
   }, [deleteFileMutation]);
 
   const shareFileMutation = useMutation({
-    mutationFn: async ({ fileId, recipient, passphrase, isEmail }: { fileId: string; recipient: string; passphrase: string; isEmail?: boolean }) => {
+    mutationFn: async ({ fileId, recipient, passphrase, isEmail }: { fileId: string; recipient: string; passphrase?: string; isEmail?: boolean }) => {
+      const cryptoKey = vaultKey || passphrase;
+      if (!cryptoKey) {
+        throw new Error("Vault is locked. Session keys are required to generate share grants.");
+      }
+
       const body: any = {
-        passphrase,
+        passphrase: cryptoKey,
         allow_multiple_downloads: true,
       };
 
       if (isEmail) {
         body.recipient_email = recipient;
+        
+        // E2EE Phase 1: Prepare the email share on the client instead of the server
+        // First we need the file's wrapped_keys
+        const fileRes = await apiClient.get('/files/', { params: { limit: 100 } });
+        const files = fileRes.data?.items || [];
+        const fileInfo = files.find((f: any) => f.file_id === fileId);
+        
+        // Since list_files doesn't return wrapped_keys directly, we fetch the specific file download headers
+        // Just a HEAD request would work, but we can do a quick fetch
+        const headRes = await apiClient.get(`/files/${fileId}?inline=1`, {
+          responseType: 'blob'
+        } as any);
+        
+        const wrappedKeysStr = headRes.headers['x-wrapped-keys'];
+        if (wrappedKeysStr) {
+          const keys = JSON.parse(wrappedKeysStr);
+          const { prepareEmailShareWithWorker } = await import('@/utils/cryptoWorker');
+          const shareResult = await prepareEmailShareWithWorker(keys.passphrase, passphrase);
+          
+          body.recipient_encrypted_file_key = shareResult.recipientEncryptedFileKey;
+          body.recipient_secret = shareResult.recipientSecretHex;
+          // The backend will combine these or email the secret.
+        }
       } else {
         body.recipient = recipient;
       }
@@ -558,7 +642,7 @@ export const FileProvider: React.FC<FileProviderProps> = ({ children }) => {
     },
   });
 
-  const shareFile = useCallback(async (fileId: string, recipient: string, passphrase: string, isEmail: boolean = false) => {
+  const shareFile = useCallback(async (fileId: string, recipient: string, passphrase?: string, isEmail: boolean = false) => {
     await shareFileMutation.mutateAsync({ fileId, recipient, passphrase, isEmail });
   }, [shareFileMutation]);
 

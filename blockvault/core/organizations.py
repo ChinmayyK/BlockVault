@@ -1,3 +1,4 @@
+
 """
 Organization management with membership and compliance profile support.
 
@@ -41,7 +42,7 @@ class OrganizationStore:
                 "wallet_address",
                 background=True,
                 name="idx_org_members_wallet",
-            )
+            ) 
             logger.info("Organization indexes ensured.")
         except Exception as exc:
             logger.warning("Failed to create organization indexes: %s", exc)

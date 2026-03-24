@@ -17,6 +17,7 @@ import { RedactionProgress } from "@/components/redact/RedactionProgress";
 import { EntitySidebar } from "@/components/redact/EntitySidebar";
 import { ReviewPanel } from "@/components/redact/ReviewPanel";
 import { LegalModalFrame } from "@/components/legal/modals/LegalModalFrame";
+import { PassphraseModal } from "@/components/file/PassphraseModal";
 import { getApiBase } from "@/lib/getApiBase";
 import { readStoredUser } from "@/utils/authStorage";
 
@@ -1310,81 +1311,17 @@ export default function RedactPage() {
                 </div>
             </div>
 
-            {showPassphraseModal && (
-                <LegalModalFrame
-                    icon={<Lock className="h-5 w-5 text-white" />}
-                    title="Enter Encryption Passphrase"
-                    subtitle="Authenticate access to decrypt this file for redaction."
-                    onClose={() => {
-                        setShowPassphraseModal(false);
-                        setPassphraseInput("");
-                        setConfirmedPassphrase("");
-                        navigate("/files");
-                    }}
-                    widthClassName="max-w-md"
-                    className="border-white/14 bg-[rgba(3,7,18,0.72)] shadow-[0_28px_90px_rgba(2,6,23,0.72)] ring-1 ring-white/8"
-                    contentClassName="space-y-6"
-                    overlayClassName="bg-black/78 backdrop-blur-[2px]"
-                    footer={(
-                        <div className="flex justify-end gap-3">
-                            <button
-                                className="px-4 py-2 text-sm rounded-lg border border-slate-700 text-slate-200 hover:bg-slate-800"
-                                disabled={isUnlockingDocument}
-                                onClick={() => {
-                                    setShowPassphraseModal(false);
-                                    setPassphraseInput("");
-                                    setConfirmedPassphrase("");
-                                    navigate("/files");
-                                }}
-                            >
-                                Cancel
-                            </button>
-                            <button
-                                className={`px-4 py-2 text-sm rounded-lg font-medium transition-colors ${canContinuePassphrase
-                                    ? "bg-blue-600 text-white border border-blue-500 hover:bg-blue-500"
-                                    : "bg-slate-700 text-slate-400 border border-slate-600 cursor-not-allowed"
-                                    }`}
-                                onClick={handleConfirmPassphrase}
-                                disabled={!canContinuePassphrase || isUnlockingDocument}
-                            >
-                                {isUnlockingDocument ? "Decrypting..." : "Continue"}
-                            </button>
-                        </div>
-                    )}
-                    headerAccent="blue"
-                >
-                    <div className="space-y-3">
-                        <p className="text-sm text-slate-300">
-                            The document must be unlocked with the symmetric encryption key (passphrase) provided by the owner before redaction can begin.
-                        </p>
-                        <div className="bg-blue-500/10 border border-blue-500/20 rounded-md p-3">
-                            <h4 className="text-xs font-semibold text-blue-400 mb-1 tracking-wider uppercase">Zero Knowledge Guarantee</h4>
-                            <p className="text-[11px] text-blue-300">
-                                Passphrases are never transmitted to our servers. All document decryption runs locally inside your browser's memory.
-                            </p>
-                        </div>
-                        <div className="relative">
-                            <input
-                                type="password"
-                                placeholder="Enter passphrase"
-                                value={passphraseInput}
-                                onChange={(e) => setPassphraseInput(e.target.value)}
-                                onKeyDown={(e) => {
-                                    if (e.key === 'Enter' && canContinuePassphrase && !isUnlockingDocument) {
-                                        void handleConfirmPassphrase();
-                                    }
-                                }}
-                                className="w-full rounded-xl border border-white/12 bg-white/[0.045] px-4 py-3 text-white placeholder:text-slate-500 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] focus:outline-none focus:ring-2 focus:ring-primary-500/60 focus:border-primary-400/30"
-                                autoFocus
-                            />
-                            <Lock className="absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
-                        </div>
-                        <p className="text-xs text-slate-500">
-                            If you can’t recall the original passphrase, contact the file owner or refer to your secure passphrase manager.
-                        </p>
-                    </div>
-                </LegalModalFrame>
-            )}
+            <PassphraseModal
+                isOpen={showPassphraseModal}
+                onClose={() => {
+                    setShowPassphraseModal(false);
+                    setPassphraseInput("");
+                    setConfirmedPassphrase("");
+                    navigate("/files");
+                }}
+                onConfirm={handleConfirmPassphrase}
+                isProcessing={isUnlockingDocument}
+            />
 
             {consistencyPromptGroup && (
                 <ConsistencyPromptModal

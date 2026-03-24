@@ -28,10 +28,31 @@ def profile():  # type: ignore
         "role": role_name(getattr(request, "role", Role.AUDITOR)),
         "role_value": int(getattr(request, "role", Role.AUDITOR)),
         "has_public_key": bool(doc.get("sharing_pubkey")),
+        "wrapped_vault_key": doc.get("wrapped_vault_key"),
     }
     if include_key and doc.get("sharing_pubkey"):
         resp["public_key_pem"] = doc.get("sharing_pubkey")
     return resp
+    
+@bp.post("/vault")
+@require_auth
+def set_vault_key():  # type: ignore
+    """Store or rotate the user's Master Passphrase-wrapped Vault Key."""
+    payload = request.get_json(silent=True) or {}
+    wrapped_vault_key = payload.get("wrapped_vault_key")
+    
+    if not wrapped_vault_key or not isinstance(wrapped_vault_key, str):
+        abort(400, "wrapped_vault_key string is required")
+        
+    now_ms = int(time.time() * 1000)
+    address = getattr(request, "address")
+    
+    _users_collection().update_one(
+        {"address": address},
+        {"$set": {"wrapped_vault_key": wrapped_vault_key, "vault_key_updated_at": now_ms}},
+        upsert=True,
+    )
+    return {"status": "ok", "updated_at": now_ms}
 
 
 @bp.post("/public_key")

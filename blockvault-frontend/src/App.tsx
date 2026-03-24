@@ -33,9 +33,11 @@ const OrganizationsPage = lazy(() => import("./pages/Organizations"));
 const WorkspaceDashboardPage = lazy(() => import("./pages/WorkspaceDashboard"));
 const DemoInitPage = lazy(() => import("./pages/DemoInitPage"));
 const DemoRedactPage = lazy(() => import("./pages/DemoRedactPage"));
+const SecureAccessPage = lazy(() => import("./pages/SecureAccessPage"));
 
 // Import BlockVault contexts
 import { AuthProvider } from "@/contexts/AuthContext";
+import { VaultProvider } from "@/contexts/VaultContext";
 import { FileProvider } from "@/contexts/FileContext";
 import { RBACProvider } from "@/contexts/RBACContext";
 import { CaseProvider } from "@/contexts/CaseContext";
@@ -82,35 +84,36 @@ const App = () => {
           <AxiosLoadingInterceptor />
           <BrowserRouter future={{ v7_relativeSplatPath: true }}>
             <AuthProvider>
-              <FileProvider>
-                <RBACProvider>
-                  <CaseProvider>
-                    <TooltipProvider>
-                      <Toaster />
-                      <Sonner />
-                      <HotToaster
-                        position="top-right"
-                        toastOptions={{
-                          duration: 4000,
-                          style: {
-                            background: '#0a0a0a',
-                            color: '#ffffff',
-                            border: '1px solid #1f6feb',
-                          },
-                          success: {
-                            iconTheme: {
-                              primary: '#22C55E',
-                              secondary: '#ffffff',
+              <VaultProvider>
+                <FileProvider>
+                  <RBACProvider>
+                    <CaseProvider>
+                      <TooltipProvider>
+                        <Toaster />
+                        <Sonner />
+                        <HotToaster
+                          position="top-right"
+                          toastOptions={{
+                            duration: 4000,
+                            style: {
+                              background: '#0a0a0a',
+                              color: '#ffffff',
+                              border: '1px solid #1f6feb',
                             },
-                          },
-                          error: {
-                            iconTheme: {
-                              primary: '#EF4444',
-                              secondary: '#ffffff',
+                            success: {
+                              iconTheme: {
+                                primary: '#22C55E',
+                                secondary: '#ffffff',
+                              },
                             },
-                          },
-                        }}
-                      />
+                            error: {
+                              iconTheme: {
+                                primary: '#EF4444',
+                                secondary: '#ffffff',
+                              },
+                            },
+                          }}
+                        />
                       <RouteProgress />
                       <Suspense fallback={<PageLoader />}>
                         <Routes>
@@ -246,6 +249,7 @@ const App = () => {
                               </ProtectedRoute>
                             }
                           />
+                          <Route path="/access/:token" element={<SecureAccessPage />} />
                           <Route path="*" element={<NotFoundPage />} />
                         </Routes>
                       </Suspense>
@@ -253,6 +257,7 @@ const App = () => {
                   </CaseProvider>
                 </RBACProvider>
               </FileProvider>
+             </VaultProvider>
             </AuthProvider>
           </BrowserRouter>
         </LoadingProvider>

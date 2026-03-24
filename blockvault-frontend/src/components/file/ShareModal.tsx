@@ -160,9 +160,9 @@ export const ShareModal: React.FC<ShareModalProps> = ({ fileId, onClose }) => {
       const recipientToUse = useEmail ? trimmedEmail : trimmedAddress;
       const isEmailShare = useEmail || recipientToUse.includes('@');
 
-      // For email shares, we can't encrypt client-side (no recipient public key yet)
+      // For email shares, use the magic-link flow (server generates HKDF-wrapped key + sends email)
       if (isEmailShare) {
-        setShareStatus('Creating email share...');
+        setShareStatus('Sending secure magic link…');
         const shareResponse = await fetch(`${API_BASE}/files/${fileId}/share`, {
           method: 'POST',
           headers: {
@@ -171,13 +171,18 @@ export const ShareModal: React.FC<ShareModalProps> = ({ fileId, onClose }) => {
           },
           body: JSON.stringify({
             recipient: recipientToUse,
-            passphrase: decryptedPassphrase, // Server-side encryption for email shares
+            passphrase: decryptedPassphrase, // Used to unlock file key server-side
             role: selectedRole,
           }),
         });
 
         if (shareResponse.ok) {
-          toast.success('File shared successfully via email!');
+          const result = await shareResponse.json();
+          toast.success(
+            result.method === 'magic_link'
+              ? `✉️ Magic link sent to ${recipientToUse}`
+              : 'File shared successfully via email!'
+          );
           onClose();
           return;
         }

@@ -111,4 +111,3 @@ export const LoadingBar: React.FC<LoadingBarProps> = ({
     </div>
   );
 };
-

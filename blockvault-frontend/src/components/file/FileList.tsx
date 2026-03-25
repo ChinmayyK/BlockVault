@@ -11,7 +11,7 @@ import {
   Lock,
   Loader2,
   Search,
-  Eraser,
+  ShieldHalf,
 } from 'lucide-react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useFiles } from '@/contexts/FileContext';
@@ -796,7 +796,7 @@ export const FileList: React.FC<FileListProps> = React.memo(({
                 disabled={proofStatus === 'pending'}
                 className="w-full flex items-center justify-center gap-2 text-xs font-bold bg-primary/10 hover:bg-primary/20 text-primary transition-all rounded-xl h-10 border border-primary/20"
               >
-                <Eraser className="w-4 h-4" />
+                <ShieldHalf className="w-4 h-4" />
                 Redact Document
               </Button>
             )}

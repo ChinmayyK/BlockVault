@@ -41,6 +41,7 @@ interface FileListProps {
   isLoadingMore?: boolean;
   workspaceContext?: string;
   onFileSelect?: (file: any) => void;
+  onDownload?: (fileId: string, file: any) => Promise<void>;
 }
 
 export const FileList: React.FC<FileListProps> = React.memo(({
@@ -54,6 +55,7 @@ export const FileList: React.FC<FileListProps> = React.memo(({
   isLoadingMore = false,
   workspaceContext,
   onFileSelect,
+  onDownload,
 }) => {
   const { downloadFile, deleteFile, revokeShare } = useFiles();
   const { isVaultUnlocked, vaultKey } = useVault();
@@ -270,6 +272,11 @@ export const FileList: React.FC<FileListProps> = React.memo(({
 
   const handleDownload = async (fileId: string, file?: any) => {
     console.log('📁 handleDownload called', { fileId, file });
+
+    if (onDownload) {
+      await onDownload(fileId, file);
+      return;
+    }
 
     // For shared files with encrypted_key, download directly without asking for passphrase
     if (file && file.encrypted_key) {

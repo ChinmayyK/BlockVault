@@ -95,8 +95,8 @@ export const FileDetailsPanel: React.FC<FileDetailsPanelProps> = ({ file, onClos
 
     if (!file) return null;
 
-    const hasRedactions = file.redaction_status === 'completed';
-    const hasProof = file.proof_status === 'verified';
+    const hasRedactions = file.redaction_status === 'completed' || file.redaction_status === 'complete';
+    const hasProof = file.redaction_status === 'complete' || file.proof_status === 'verified';
     const hasAnchor = !!file.tx_hash;
     const complianceProfile = file.metadata?.compliance_profile;
     const redactionCount = file.metadata?.redaction_count || (hasRedactions ? '12' : '0');

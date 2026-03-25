@@ -20,6 +20,7 @@ from __future__ import annotations
 import hashlib
 import time
 import logging
+import json
 from datetime import datetime, timezone
 from typing import Dict, Any
 
@@ -301,6 +302,7 @@ def access_file(token: str):
         "recipient_encrypted_file_key": share.get("recipient_encrypted_file_key"),
         "presigned_url": presigned_url,
         "is_v2": bool(file_rec.get("wrapped_keys")),
+        "redaction_status": file_rec.get("redaction_status"),
         "aad": file_rec.get("aad") or "",
         "sha256": file_rec.get("sha256"),
         "access_count": access_count + 1,
@@ -439,3 +441,70 @@ def cleanup_expired_shares() -> int:
         logger.info("Cleaned up %d expired magic share(s)", result.deleted_count)
 
     return result.deleted_count
+@bp.get("/<token>/verify-proof", strict_slashes=False)
+def verify_magic_link_proof(token: str):
+    """Verify the zero-knowledge proof of a redacted document shared via Magic Link."""
+    token_hash = _hash_token(token)
+    coll = _magic_shares_collection()
+    share = coll.find_one({"access_token_hash": token_hash, "revoked": {"$ne": True}})
+    
+    if not share:
+        return jsonify({"valid": False, "error": "link_not_found"}), 404
+        
+    file_id = share.get("file_id")
+    files_coll = get_db()["files"]
+    
+    # Resolve ObjectId vs str
+    from bson import ObjectId  # type: ignore
+    try:
+        file_rec = files_coll.find_one({"_id": ObjectId(file_id)})
+    except Exception:
+        file_rec = files_coll.find_one({"_id": file_id})
+        
+    if not file_rec:
+        return jsonify({"valid": False, "error": "file_not_found"}), 404
+
+    status = file_rec.get("redaction_status")
+    if status != "complete":
+        return jsonify({"valid": False, "error": "no_proof_available", "message": "Document is not fully redacted yet"})
+
+    proof_payload = file_rec.get("redaction_proof") or {}
+    proof_location = proof_payload.get("proof_location")
+    
+    if not proof_location:
+        return jsonify({"valid": False, "error": "proof_missing"})
+
+    try:
+        proof_package = json.loads(s3_mod.download_blob(proof_location).decode("utf-8"))
+    except Exception as exc:
+        logger.error("Failed to load ZK proof package from S3: %s", exc)
+        return jsonify({"valid": False, "error": "proof_unavailable"})
+
+    from ..core import zk_redaction
+    
+    valid = True
+    redaction_vkey = zk_redaction.redaction_vkey_path()
+    
+    chunk_count = proof_package.get("chunk_count")
+    if not isinstance(chunk_count, int) or chunk_count <= 0:
+        return jsonify({"valid": False, "error": "invalid_proof_metadata"})
+        
+    modified_chunks_data = proof_package.get("modified_chunks") or []
+    
+    # We cryptographically verify each modified chunk against the VKey
+    for entry in modified_chunks_data:
+        proof = entry.get("proof")
+        public_signals = entry.get("public_signals")
+        
+        if not proof or not public_signals:
+            valid = False
+            break
+            
+        if not zk_redaction.verify_redaction_proof(proof, public_signals, vkey_path=redaction_vkey):
+            valid = False
+            break
+
+    if valid:
+        return jsonify({"valid": True, "message": "Zero-knowledge proof verified successfully"})
+    else:
+        return jsonify({"valid": False, "error": "cryptographic_tampering_detected"})

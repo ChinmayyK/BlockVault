@@ -270,6 +270,42 @@ self.onmessage = async (e: MessageEvent) => {
         result: { vaultKey: vaultKeyHex }
       });
       
+    } else if (type === 'WRAP_WORKSPACE_KEY') {
+      const { vaultKey, workspaceKey } = payload;
+      
+      // If no workspaceKey provided, generate a new one
+      let wsKeyRaw: Uint8Array;
+      let wsKeyHex: string;
+      if (workspaceKey) {
+        // Assume hex input
+        wsKeyRaw = new Uint8Array(workspaceKey.match(/.{1,2}/g)!.map((byte: string) => parseInt(byte, 16)));
+        wsKeyHex = workspaceKey;
+      } else {
+        wsKeyRaw = crypto.getRandomValues(new Uint8Array(32));
+        wsKeyHex = Array.from(wsKeyRaw).map(b => b.toString(16).padStart(2, '0')).join('');
+      }
+      
+      // Wrap Workspace Key with Vault Key
+      const wrappedWorkspaceKeyB64 = await wrapKey(wsKeyRaw, vaultKey);
+      
+      self.postMessage({
+        type: 'SUCCESS',
+        jobId,
+        result: { workspaceKey: wsKeyHex, wrappedWorkspaceKey: wrappedWorkspaceKeyB64 }
+      });
+
+    } else if (type === 'UNWRAP_WORKSPACE_KEY') {
+      const { wrappedWorkspaceKey, vaultKey } = payload;
+      
+      // Unwrap Workspace Key
+      const wsKeyRaw = await unwrapKey(wrappedWorkspaceKey, vaultKey);
+      const wsKeyHex = Array.from(new Uint8Array(wsKeyRaw)).map(b => b.toString(16).padStart(2, '0')).join('');
+      
+      self.postMessage({
+        type: 'SUCCESS',
+        jobId,
+        result: { workspaceKey: wsKeyHex }
+      });
     }
   } catch (err: any) {
     self.postMessage({

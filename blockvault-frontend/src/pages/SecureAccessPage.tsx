@@ -61,7 +61,7 @@ function formatFileSize(bytes: number): string {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
 }
 
-type AccessState = 'loading' | 'ready' | 'decrypting' | 'done' | 'error';
+type AccessState = 'loading' | 'ready' | 'verifying_proof' | 'decrypting' | 'done' | 'error';
 type ErrorType = 'expired' | 'invalid' | 'decryption' | 'general';
 
 const SecureAccessPage: React.FC = () => {
@@ -149,6 +149,21 @@ const SecureAccessPage: React.FC = () => {
       if (!secretHex) throw new Error('Missing decryption key');
 
       let decryptedFile: Uint8Array;
+      
+      // Step 1: Pre-flight ZK Proof Verification
+      if (shareData.redaction_status === 'complete') {
+        setState('verifying_proof');
+        const verifyRes = await fetch(`${API_BASE}/access/${token}/verify-proof`);
+        if (!verifyRes.ok) {
+           throw new Error('Verification service error');
+        }
+        const verifyData = await verifyRes.json();
+        if (!verifyData.valid) {
+           throw new Error('ZK proof validation failed');
+        }
+      }
+
+      setState('decrypting');
 
       if (shareData.is_v2) {
         // E2EE Phase 1 (Chunked Web Worker Decryption)
@@ -249,6 +264,28 @@ const SecureAccessPage: React.FC = () => {
             </div>
             <h2 className="text-lg font-medium text-zinc-100 mb-2">Verifying secure access...</h2>
             <p className="text-sm text-zinc-400 max-w-xs">Checking permissions and preparing your file.</p>
+          </motion.div>
+        );
+
+      case 'verifying_proof':
+        return (
+          <motion.div
+            key="verifying"
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="flex flex-col items-center justify-center py-12 px-6 text-center"
+          >
+            <div className="relative w-16 h-16 mb-6">
+              <div className="absolute inset-0 rounded-full border-t-2 border-b-2 border-purple-500 animate-[spin_2s_ease-in-out_infinite]"></div>
+              <div className="absolute inset-4 rounded-full border-l-2 border-r-2 border-indigo-500 animate-[spin_1s_linear_infinite_reverse]"></div>
+              <div className="absolute inset-0 flex items-center justify-center">
+                <Shield className="w-5 h-5 text-purple-400" />
+              </div>
+            </div>
+            <h2 className="text-lg font-medium text-zinc-100 mb-2">Verifying Zero-Knowledge Proof...</h2>
+            <p className="text-sm text-zinc-400 max-w-sm">
+              Cryptographically ensuring this document has not been tampered with.
+            </p>
           </motion.div>
         );
 

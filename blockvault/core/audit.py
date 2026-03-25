@@ -21,6 +21,7 @@ import time
 from typing import Any, Dict, Optional
 
 from flask import request
+from blockvault.core.merkle_tree import MerkleLog
 
 logger = logging.getLogger(__name__)
 
@@ -106,6 +107,12 @@ def log_event(
     doc["entry_hash"] = entry_hash
 
     try:
+        # Append the deterministic event hash to the Merkle Tree log
+        # to generate a verifiable leaf index for rapid O(log n) lookups.
+        merkle_log = MerkleLog()
+        leaf_index = merkle_log.append_leaf(entry_hash)
+        doc["leaf_index"] = leaf_index
+        
         _audit_collection().insert_one(doc)
         _last_hash = entry_hash
     except Exception:

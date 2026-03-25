@@ -38,6 +38,7 @@ const SecureAccessPage = lazy(() => import("./pages/SecureAccessPage"));
 // Import BlockVault contexts
 import { AuthProvider } from "@/contexts/AuthContext";
 import { VaultProvider } from "@/contexts/VaultContext";
+import { WorkspaceProvider } from "@/contexts/WorkspaceContext";
 import { FileProvider } from "@/contexts/FileContext";
 import { RBACProvider } from "@/contexts/RBACContext";
 import { CaseProvider } from "@/contexts/CaseContext";
@@ -85,10 +86,11 @@ const App = () => {
           <BrowserRouter future={{ v7_relativeSplatPath: true }}>
             <AuthProvider>
               <VaultProvider>
-                <FileProvider>
-                  <RBACProvider>
-                    <CaseProvider>
-                      <TooltipProvider>
+                <WorkspaceProvider>
+                  <FileProvider>
+                    <RBACProvider>
+                      <CaseProvider>
+                        <TooltipProvider>
                         <Toaster />
                         <Sonner />
                         <HotToaster
@@ -257,6 +259,7 @@ const App = () => {
                   </CaseProvider>
                 </RBACProvider>
               </FileProvider>
+             </WorkspaceProvider>
              </VaultProvider>
             </AuthProvider>
           </BrowserRouter>

@@ -247,6 +247,9 @@ def create_app() -> Flask:
 
     from .api.workspaces import bp as workspaces_bp
     app.register_blueprint(workspaces_bp, url_prefix="/workspaces")
+    
+    from .api.audit import audit_bp
+    app.register_blueprint(audit_bp)
 
     from .api.access import bp as access_bp
     app.register_blueprint(access_bp, url_prefix="/access")

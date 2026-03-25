@@ -1,26 +1,86 @@
-import React, { useState } from 'react';
-import { UserPlus, Settings, FolderOpen, Users, Activity, ShieldAlert, X } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { UserPlus, Settings, FolderOpen, Users, Activity, ShieldAlert, X, Lock } from 'lucide-react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card } from '@/components/ui/card';
 import { InviteMemberModal } from '@/components/workspaces/InviteMemberModal';
 import { FileList } from '@/components/file/FileList';
+import { useWorkspace } from '@/contexts/WorkspaceContext';
+import { useAuth } from '@/contexts/AuthContext';
+import { getApiBase } from '@/lib/getApiBase';
+import { useFiles } from '@/contexts/FileContext';
+import toast from 'react-hot-toast';
 
 export default function WorkspaceDashboard() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { activeWorkspace, activeWorkspaceKey, setActiveWorkspace, isLoading: wsLoading } = useWorkspace();
+  const { user } = useAuth();
+  const { downloadFile } = useFiles();
+  
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [activeTab, setActiveTab] = useState('files');
+  const [files, setFiles] = useState<any[]>([]);
+  const [members, setMembers] = useState<any[]>([]);
+  const [filesLoading, setFilesLoading] = useState(false);
 
-  // Dummy user context to simulate roles
-  const currentUserRole = 'Admin'; // Suppose the current user is an Admin
-  const canInvite = currentUserRole === 'Admin' || currentUserRole === 'Owner';
+  // Set the active workspace whenever the ID changes
+  useEffect(() => {
+    if (id && (!activeWorkspace || activeWorkspace.workspace_id !== id)) {
+      setActiveWorkspace(id);
+    }
+  }, [id, activeWorkspace, setActiveWorkspace]);
 
-  const dummyFiles = [
-    { id: '1', name: 'Due_Diligence_Report.pdf', size: 1024 * 1024 * 2.5, created_at: new Date().toISOString(), type: 'my-files' },
-    { id: '2', name: 'Acquisition_Agreement_Draft.docx', size: 1024 * 512, created_at: new Date().toISOString(), type: 'my-files' }
-  ];
+  // Fetch files and members when workspace is active
+  useEffect(() => {
+    if (!activeWorkspace || !user?.jwt) return;
+
+    const fetchWorkspaceData = async () => {
+      try {
+        setFilesLoading(true);
+        // Fetch files scoped to this workspace
+        const resFiles = await fetch(`${getApiBase()}/files/?workspace_id=${activeWorkspace.workspace_id}`, {
+          headers: { 'Authorization': `Bearer ${user.jwt}` }
+        });
+        if (resFiles.ok) {
+          const data = await resFiles.json();
+          setFiles(data.files || data.items || []);
+        }
+
+        // Fetch members
+        const resMembers = await fetch(`${getApiBase()}/workspaces/${activeWorkspace.workspace_id}`, {
+          headers: { 'Authorization': `Bearer ${user.jwt}` }
+        });
+        if (resMembers.ok) {
+          const data = await resMembers.json();
+          setMembers(data.members || []);
+        }
+      } catch (err) {
+        console.error('Failed to fetch workspace data:', err);
+      } finally {
+        setFilesLoading(false);
+      }
+    };
+
+    fetchWorkspaceData();
+  }, [activeWorkspace, user?.jwt]);
+
+  const currentUserRole = activeWorkspace?.role || 'VIEWER';
+  const canInvite = currentUserRole === 'WORKSPACE_OWNER' || currentUserRole === 'WORKSPACE_ADMIN';
+
+  const handleDownload = async (fileId: string, file: any) => {
+    if (!activeWorkspaceKey) {
+      toast.error('Workspace Key not available. Is your Vault unlocked?');
+      return;
+    }
+    // Pass the activeWorkspaceKey as the "passphrase" for decryption fallback in downloadFile
+    await downloadFile(fileId, activeWorkspaceKey, false, undefined, file.name || file.file_name);
+  };
+
+  if (!activeWorkspace && !wsLoading) {
+    return <div className="p-8 text-center text-muted-foreground">Workspace not found or access denied.</div>;
+  }
 
   return (
     <div className="max-w-6xl mx-auto py-8 px-4 space-y-8 animate-in fade-in duration-500">
@@ -31,8 +91,12 @@ export default function WorkspaceDashboard() {
             <span className="font-semibold uppercase tracking-wider">Organizations</span>
             <span>/</span>
           </div>
-          <h1 className="text-3xl font-bold text-foreground">Mergers 2026</h1>
-          <p className="text-muted-foreground mt-1">Acme Legal</p>
+          <h1 className="text-3xl font-bold text-foreground">
+            {activeWorkspace?.name || 'Loading Workspace...'}
+          </h1>
+          <p className="text-muted-foreground mt-1 text-sm bg-muted/30 inline-block px-2 py-0.5 rounded border border-border mt-2">
+            Workspace ID: <span className="font-mono">{activeWorkspace?.workspace_id || id}</span>
+          </p>
         </div>
         
         <div className="flex items-center gap-3">
@@ -52,6 +116,16 @@ export default function WorkspaceDashboard() {
         </div>
       </div>
 
+      {!activeWorkspaceKey && activeWorkspace && (
+        <Card className="bg-amber-500/10 border-amber-500/20 p-4 flex items-start gap-4 animate-pulse">
+          <Lock className="w-5 h-5 text-amber-500 mt-0.5" />
+          <div>
+            <h3 className="text-sm font-bold text-amber-500">Workspace Locked</h3>
+            <p className="text-xs text-amber-500/80 mt-1">Your Vault is locked or the Workspace Key could not be derived. Please unlock your Vault in the top right to access encrypted files.</p>
+          </div>
+        </Card>
+      )}
+
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <TabsList>
           <TabsTrigger value="files" className="gap-2">
@@ -69,12 +143,19 @@ export default function WorkspaceDashboard() {
         </TabsList>
         
         <TabsContent value="files" className="mt-6">
-          <FileList 
-            files={dummyFiles} 
-            type="my-files" 
-            workspaceContext="Mergers 2026"
-            viewMode="grid"
-          />
+          {filesLoading ? (
+            <div className="flex items-center justify-center p-12 text-muted-foreground animate-pulse">
+              Loading workspace files...
+            </div>
+          ) : (
+            <FileList 
+              files={files} 
+              type="my-files" 
+              workspaceContext={activeWorkspace?.name}
+              viewMode="grid"
+              onDownload={handleDownload}
+            />
+          )}
         </TabsContent>
         
         <TabsContent value="members" className="mt-6">
@@ -89,59 +170,38 @@ export default function WorkspaceDashboard() {
                  </tr>
                </thead>
                <tbody className="divide-y divide-border/60">
-                 {/* Current User */}
-                 <tr className="hover:bg-muted/50 transition-colors">
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-3">
-                         <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center">
-                           <span className="font-bold text-primary">Y</span>
-                         </div>
-                         <div>
-                            <p className="font-medium text-foreground">You</p>
-                            <p className="text-xs text-muted-foreground">0x12..34xx</p>
-                         </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                       <span className="px-2.5 py-1 text-[10px] uppercase font-bold tracking-wider rounded-full bg-blue-500/20 text-blue-400 border border-blue-500/30">
-                         {currentUserRole}
-                       </span>
-                    </td>
-                    <td className="px-6 py-4 text-muted-foreground font-mono text-xs">
-                       Jan 12, 2026
-                    </td>
-                    <td className="px-6 py-4 text-right">
-                       <span className="text-muted-foreground text-xs italic">Current User</span>
-                    </td>
-                 </tr>
-                 {/* Dummy User */}
-                 <tr className="hover:bg-muted/50 transition-colors">
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-3">
-                         <div className="w-8 h-8 rounded-full bg-accent flex items-center justify-center">
-                           <span className="font-bold text-muted-foreground">A</span>
-                         </div>
-                         <div>
-                            <p className="font-medium text-foreground">Alice Lawyer</p>
-                            <p className="text-xs text-muted-foreground">0x99..12xx</p>
-                         </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                       <span className="px-2.5 py-1 text-[10px] uppercase font-bold tracking-wider rounded-full bg-muted text-muted-foreground border border-border">
-                         Viewer
-                       </span>
-                    </td>
-                    <td className="px-6 py-4 text-muted-foreground font-mono text-xs">
-                       Mar 01, 2026
-                    </td>
-                    <td className="px-6 py-4 text-right">
-                       <Button variant="ghost" size="sm" className="text-destructive hover:bg-destructive/10 hover:text-destructive gap-2 h-8" disabled={!canInvite}>
-                         <X className="w-3.5 h-3.5" />
-                         Remove
-                       </Button>
-                    </td>
-                 </tr>
+                 {members.map((member, index) => (
+                   <tr key={member.wallet_address || index} className="hover:bg-muted/50 transition-colors">
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-3">
+                           <div className={`w-8 h-8 rounded-full ${member.wallet_address === user?.address ? 'bg-primary/20 text-primary' : 'bg-accent text-accent-foreground'} flex items-center justify-center`}>
+                             <span className="font-bold">{member.wallet_address?.substring(2, 4).toUpperCase() || '?'}</span>
+                           </div>
+                           <div>
+                              <p className="font-medium text-foreground">{member.wallet_address === user?.address ? 'You' : member.wallet_address}</p>
+                           </div>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                         <span className="px-2.5 py-1 text-[10px] uppercase font-bold tracking-wider rounded-full bg-blue-500/20 text-blue-400 border border-blue-500/30">
+                           {member.role?.replace('WORKSPACE_', '') || 'MEMBER'}
+                         </span>
+                      </td>
+                      <td className="px-6 py-4 text-muted-foreground font-mono text-xs">
+                         {new Date(member.joined_at * 1000).toLocaleDateString()}
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                         {member.wallet_address === user?.address ? (
+                           <span className="text-muted-foreground text-xs italic">Current User</span>
+                         ) : (
+                           <Button variant="ghost" size="sm" className="text-destructive hover:bg-destructive/10 hover:text-destructive gap-2 h-8" disabled={!canInvite}>
+                             <X className="w-3.5 h-3.5" />
+                             Remove
+                           </Button>
+                         )}
+                      </td>
+                   </tr>
+                 ))}
                </tbody>
             </table>
           </Card>

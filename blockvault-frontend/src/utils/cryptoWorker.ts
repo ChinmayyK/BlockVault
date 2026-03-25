@@ -44,6 +44,15 @@ export interface UnwrapVaultKeyResult {
   vaultKey: string;
 }
 
+export interface WrapWorkspaceKeyResult {
+  workspaceKey: string;
+  wrappedWorkspaceKey: string;
+}
+
+export interface UnwrapWorkspaceKeyResult {
+  workspaceKey: string;
+}
+
 export function encryptFileWithWorker(
   file: File,
   passphrase: string,
@@ -194,6 +203,64 @@ export function unwrapVaultKeyWithWorker(
       type: 'UNWRAP_VAULT_KEY',
       jobId,
       payload: { wrappedVaultKey, passphrase }
+    });
+  });
+}
+
+export function wrapWorkspaceKeyWithWorker(
+  vaultKey: string,
+  workspaceKey?: string
+): Promise<WrapWorkspaceKeyResult> {
+  return new Promise((resolve, reject) => {
+    const worker = getWorker();
+    const jobId = ++currentJobId;
+
+    const handler = (e: MessageEvent<CryptoWorkerResponse>) => {
+      if (e.data.jobId !== jobId) return;
+
+      if (e.data.type === 'SUCCESS') {
+        worker.removeEventListener('message', handler);
+        resolve(e.data.result);
+      } else if (e.data.type === 'ERROR') {
+        worker.removeEventListener('message', handler);
+        reject(new Error(e.data.error));
+      }
+    };
+
+    worker.addEventListener('message', handler);
+    worker.postMessage({
+      type: 'WRAP_WORKSPACE_KEY',
+      jobId,
+      payload: { vaultKey, workspaceKey }
+    });
+  });
+}
+
+export function unwrapWorkspaceKeyWithWorker(
+  wrappedWorkspaceKey: string,
+  vaultKey: string
+): Promise<UnwrapWorkspaceKeyResult> {
+  return new Promise((resolve, reject) => {
+    const worker = getWorker();
+    const jobId = ++currentJobId;
+
+    const handler = (e: MessageEvent<CryptoWorkerResponse>) => {
+      if (e.data.jobId !== jobId) return;
+
+      if (e.data.type === 'SUCCESS') {
+        worker.removeEventListener('message', handler);
+        resolve(e.data.result);
+      } else if (e.data.type === 'ERROR') {
+        worker.removeEventListener('message', handler);
+        reject(new Error(e.data.error));
+      }
+    };
+
+    worker.addEventListener('message', handler);
+    worker.postMessage({
+      type: 'UNWRAP_WORKSPACE_KEY',
+      jobId,
+      payload: { wrappedWorkspaceKey, vaultKey }
     });
   });
 }

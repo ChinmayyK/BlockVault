@@ -77,6 +77,11 @@ def _ensure_indexes(db: Database) -> None:
             background=True,
         )
         db["audit_events"].create_index(
+            [("target_id", 1), ("timestamp", -1)],
+            name="idx_audit_target_time",
+            background=True,
+        )
+        db["audit_events"].create_index(
             [("user_id", 1), ("timestamp", -1)],
             name="idx_audit_user_time",
             background=True,

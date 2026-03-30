@@ -161,7 +161,22 @@ def login():
                 })
                 
                 if pending_share:
-                    rsa_private_key = pending_share.get("recipient_private_key_pending")
+                    raw_pending = pending_share.get("recipient_private_key_pending")
+                    # Decrypt the Fernet-encrypted private key
+                    if raw_pending:
+                        try:
+                            import base64, hashlib as _hl
+                            from cryptography.fernet import Fernet, InvalidToken
+                            fernet_key = base64.urlsafe_b64encode(
+                                _hl.sha256(current_app.config["SECRET_KEY"].encode()).digest()
+                            )
+                            f = Fernet(fernet_key)
+                            rsa_private_key = f.decrypt(raw_pending.encode("utf-8")).decode("utf-8")
+                        except (InvalidToken, Exception):
+                            # Fallback: may be a legacy unencrypted value
+                            rsa_private_key = raw_pending
+                    else:
+                        rsa_private_key = None
                     rsa_public_key = user_doc.get("sharing_pubkey")
                     rsa_message = "Retrieved RSA keys that were generated for you by a file sharer"
                     current_app.logger.info(f"🔑 Retrieved pending private key for user {address}")

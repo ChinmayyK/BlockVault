@@ -301,6 +301,8 @@ def create_app() -> Flask:
 
     @app.get('/auth/_routes')
     def auth_routes():
+        if is_production:
+            return {"error": "not available in production"}, 404
         auth_rules = []
         for r in app.url_map.iter_rules():  # type: ignore
             if str(r).startswith('/auth'):

@@ -4,6 +4,7 @@ import base64
 import json
 import io
 import os
+import re
 import time
 import traceback
 import hashlib
@@ -670,7 +671,7 @@ def list_files():  # type: ignore
         if folder_filter:
             flt["folder"] = folder_filter
         if q:
-            flt["original_name"] = {"$regex": q, "$options": "i"}
+            flt["original_name"] = {"$regex": re.escape(q), "$options": "i"}
 
         docs = list(coll.find(flt))
         visible_docs = _collapse_visible_file_docs(docs)
@@ -736,6 +737,16 @@ def delete_file(file_id: str):  # type: ignore
             if ipfs_mod.ipfs_enabled():
                 client = ipfs_mod._get_client()  # type: ignore[attr-defined]
                 client.pin.rm(cid)  # type: ignore
+        except Exception:
+            pass
+    # Reclaim storage quota (best-effort, before deleting record)
+    file_size = rec.get("size", 0)
+    if file_size > 0:
+        try:
+            get_db()["users"].update_one(
+                {"address": owner, "storage_used": {"$gte": file_size}},
+                {"$inc": {"storage_used": -file_size}},
+            )
         except Exception:
             pass
     # Delete record
@@ -853,7 +864,6 @@ def verify_file(file_id: str):  # type: ignore
         "merkle_proof": merkle_proof,
         "merkle_valid": merkle_valid,
     }
-    log_event("verify", target_id=file_id, details={"merkle_valid": merkle_valid})
     log_event("verify", target_id=file_id, details={"merkle_valid": merkle_valid})
     return result
 
@@ -1442,6 +1452,9 @@ def share_file(file_id: str):  # type: ignore
         # and wraps the file_key using the Web Worker. The server just stores it.
         recipient_secret_hex = data.get("recipient_secret")
         recipient_encrypted_file_key = data.get("recipient_encrypted_file_key")
+
+        # share_context must be defined before both V2 and V1 branches
+        share_context = f"file-share:{canonical_id}"
         
         # V2 Native E2EE Share Payload
         if recipient_secret_hex and recipient_encrypted_file_key:
@@ -1471,7 +1484,6 @@ def share_file(file_id: str):  # type: ignore
                 abort(400, "could not recover file key — invalid passphrase or missing wrapped keys")
 
             recipient_secret = _secrets.token_bytes(32)
-            share_context = f"file-share:{canonical_id}"
             recipient_encrypted_file_key = wrap_file_key_with_hkdf(file_key, recipient_secret, context=share_context)
 
         # 2. Generate access_token for the magic link
@@ -1618,9 +1630,21 @@ def share_file(file_id: str):  # type: ignore
         "gateway_url": ipfs_mod.gateway_url(file_rec.get("cid")) if file_rec.get("cid") else None,
     }
     
-    # If keys were auto-generated, store the private key for recipient retrieval
+    # If keys were auto-generated, encrypt and store the private key for recipient retrieval
     if recipient_keys_generated and recipient_private_key:
-        share_doc["recipient_private_key_pending"] = recipient_private_key
+        try:
+            from cryptography.fernet import Fernet
+            fernet_key = base64.urlsafe_b64encode(
+                hashlib.sha256(current_app.config["SECRET_KEY"].encode()).digest()
+            )
+            f = Fernet(fernet_key)
+            share_doc["recipient_private_key_pending"] = f.encrypt(
+                recipient_private_key.encode("utf-8")
+            ).decode("utf-8")
+        except Exception as e:
+            current_app.logger.warning("Failed to encrypt pending private key: %s", e)
+            # Fallback: still store it but log the warning
+            share_doc["recipient_private_key_pending"] = recipient_private_key
 
     coll = _shares_collection()
     existing = coll.find_one(share_filter)

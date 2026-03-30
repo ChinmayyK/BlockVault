@@ -421,8 +421,11 @@ def _find_record(coll: Any, file_id: str) -> Optional[Dict[str, Any]]:
     """Look up a file record by string ID (tries ObjectId first)."""
     candidates = []
     try:
-        from bson import ObjectId  # type: ignore
+        from bson import ObjectId
+        from bson.errors import InvalidId
         candidates.append(ObjectId(file_id))
+    except InvalidId:
+        pass
     except Exception:
         pass
     candidates.append(file_id)

@@ -106,12 +106,12 @@ def login():
     try:
         recovered = Account.recover_message(encoded, signature=signature)
     except Exception:
-        time.sleep(random.uniform(0.01, 0.03))  # timing defense
+        time.sleep(secrets.SystemRandom().uniform(0.01, 0.03))  # timing defense
         from ..core.audit import log_event
         log_event("failed_login", details={"address": address, "reason": "invalid_signature"})
         abort(400, "invalid signature")
     if recovered.lower() != address.lower():
-        time.sleep(random.uniform(0.01, 0.03))  # timing defense
+        time.sleep(secrets.SystemRandom().uniform(0.01, 0.03))  # timing defense
         from ..core.audit import log_event
         log_event("failed_login", details={"address": address, "reason": "address_mismatch"})
         abort(401, "signature does not match address")

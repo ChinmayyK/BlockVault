@@ -190,8 +190,8 @@ export default function FilesPage() {
 
   const filteredSharedFiles = useMemo(() =>
     (sharedFiles || []).filter(file => {
-      const fileName = file.name || file.file_name;
-      return fileName && fileName.toLowerCase().includes(debouncedSearchQuery.toLowerCase());
+      const fileName = file.name || file.file_name || 'Unknown File';
+      return fileName.toLowerCase().includes(debouncedSearchQuery.toLowerCase());
     }),
     [sharedFiles, debouncedSearchQuery]
   );

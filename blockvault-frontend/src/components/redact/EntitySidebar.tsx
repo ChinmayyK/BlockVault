@@ -2,7 +2,7 @@ import { RedactEntity, ManualRect } from "../../types/redactor";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { AlertCircle, Trash2, CheckCircle2 } from "lucide-react";
+import { AlertCircle, Trash2, CheckCircle2, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 interface EntitySidebarProps {
@@ -252,15 +252,19 @@ export function EntitySidebar({
                         <span className="font-semibold">{selectedCount} entities</span>
                     </div>
                     <Button
-                        className="w-full relative overflow-hidden group"
+                        className="w-full relative overflow-hidden group shadow transition-all hover:bg-primary/90 hover:shadow-md"
                         onClick={onApplyRedaction}
                         disabled={isApplying || (entities.length === 0 && manualBoxes.length === 0)}
                     >
                         {isApplying ? "Applying Redactions..." : "Apply & Create Copy"}
                     </Button>
-                    <p className="text-[10px] text-center text-muted-foreground leading-tight">
-                        Redacting will generate a fully anonymized copy of the document. The operation is irreversible.
-                    </p>
+                    <div className="flex items-start gap-2 bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 rounded-md p-2 mt-2">
+                        <ShieldCheck className="w-4 h-4 shrink-0 mt-0.5" />
+                        <div className="text-[10px] leading-tight">
+                            <span className="font-semibold block mb-0.5">Redactions are irreversible.</span>
+                            Content is protected using cryptographic proofs.
+                        </div>
+                    </div>
                 </div>
             )}
         </div>

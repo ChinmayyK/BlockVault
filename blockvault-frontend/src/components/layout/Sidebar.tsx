@@ -63,7 +63,7 @@ export function Sidebar() {
       {/* Mobile menu button */}
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="fixed top-4 left-4 z-50 md:hidden p-2 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-300 shadow-sm"
+        className="fixed top-4 left-4 z-50 md:hidden p-2 rounded-lg bg-background border border-border text-foreground shadow-sm"
       >
         {isOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
       </button>
@@ -79,7 +79,7 @@ export function Sidebar() {
       {/* Sidebar background and border */}
       <aside
         className={cn(
-          "group/sidebar fixed top-0 left-0 z-40 h-screen bg-[#09090b] border-r border-zinc-800 transition-all duration-200 ease-[cubic-bezier(0.25,0.1,0.25,1)] flex flex-col",
+          "group/sidebar fixed top-0 left-0 z-40 h-screen bg-card dark:bg-[#09090b] border-r border-border dark:border-zinc-800 transition-all duration-200 ease-[cubic-bezier(0.25,0.1,0.25,1)] flex flex-col",
           "md:translate-x-0",
           isOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0",
           isExpanded ? "w-52" : "md:w-[4.5rem] w-52"
@@ -88,18 +88,18 @@ export function Sidebar() {
         onMouseLeave={handleMouseLeave}
       >
         {/* Logo Section */}
-        <div className="flex h-16 items-center px-[1.125rem] shrink-0">
+        <div className="flex h-16 items-center px-[1.125rem] shrink-0 border-b border-transparent dark:border-transparent">
           <div
             className={cn(
               "flex flex-1 items-center transition-all duration-200 ease-out",
               isExpanded ? "justify-start" : "justify-center"
             )}
           >
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-zinc-200">
-              <div className="h-5 w-5 bg-zinc-200 rounded-sm" style={{ clipPath: "polygon(0 0, 70% 0, 100% 30%, 100% 100%, 0 100%)" }} />
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-primary dark:text-zinc-200">
+              <div className="h-5 w-5 bg-primary dark:bg-zinc-200 rounded-sm" style={{ clipPath: "polygon(0 0, 70% 0, 100% 30%, 100% 100%, 0 100%)" }} />
             </div>
             {isExpanded && (
-              <h1 className="font-semibold text-zinc-100 text-base tracking-tight ml-3 whitespace-nowrap overflow-hidden transition-all duration-200 delay-75">
+              <h1 className="font-semibold text-foreground dark:text-zinc-100 text-base tracking-tight ml-3 whitespace-nowrap overflow-hidden transition-all duration-200 delay-75">
                 BlockVault
               </h1>
             )}
@@ -109,7 +109,7 @@ export function Sidebar() {
             type="button"
             onClick={() => setIsPinned((prev) => !prev)}
             className={cn(
-              "ml-auto hidden rounded-full p-1.5 text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-200 md:inline-flex",
+              "ml-auto hidden rounded-full p-1.5 text-muted-foreground hover:bg-accent hover:text-accent-foreground dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-200 transition-colors md:inline-flex",
               !isExpanded && "md:opacity-0 md:pointer-events-none md:hidden" 
             )}
             aria-label={isPinned ? "Unpin sidebar" : "Pin sidebar"}
@@ -131,8 +131,8 @@ export function Sidebar() {
                       "group/nav flex items-center gap-3 rounded-[10px] px-2 py-2 text-sm font-medium transition-all duration-200 ease-out transform hover:scale-[1.02]",
                       !isExpanded && "md:justify-center md:px-0",
                       isActive 
-                        ? "text-zinc-100" 
-                        : "text-zinc-400 hover:bg-zinc-800/40 hover:text-zinc-200"
+                        ? "text-primary dark:text-zinc-100 bg-accent/50 dark:bg-transparent" 
+                        : "text-muted-foreground hover:bg-accent hover:text-accent-foreground dark:text-zinc-400 dark:hover:bg-zinc-800/40 dark:hover:text-zinc-200"
                     )
                   }
                 >
@@ -142,8 +142,8 @@ export function Sidebar() {
                         className={cn(
                           "flex items-center justify-center shrink-0 w-[34px] h-[34px] rounded-[8px] transition-all duration-200 ease-out",
                           isActive
-                            ? "bg-zinc-800/80 text-zinc-100 shadow-[0_2px_10px_rgba(0,0,0,0.12)] border border-white/5"
-                            : "text-zinc-400 group-hover/nav:text-zinc-300"
+                            ? "bg-background border border-border shadow-sm dark:bg-zinc-800/80 dark:border-white/5 dark:shadow-[0_2px_10px_rgba(0,0,0,0.12)] text-primary dark:text-zinc-100"
+                            : "text-muted-foreground group-hover/nav:text-accent-foreground dark:text-zinc-400 dark:group-hover/nav:text-zinc-300"
                         )}
                       >
                         <item.icon className={cn("h-[18px] w-[18px]", isActive ? "opacity-100" : "opacity-80")} />
@@ -164,7 +164,7 @@ export function Sidebar() {
                 </NavLink>
               </TooltipTrigger>
               {!isExpanded && (
-                <TooltipContent side="right" sideOffset={14} className="bg-zinc-800 text-zinc-200 border-zinc-700/60 shadow-lg font-medium text-xs px-2.5 py-1.5 rounded-md">
+                <TooltipContent side="right" sideOffset={14} className="bg-popover text-popover-foreground border-border dark:bg-zinc-800 dark:text-zinc-200 dark:border-zinc-700/60 shadow-lg font-medium text-xs px-2.5 py-1.5 rounded-md">
                   {item.name}
                 </TooltipContent>
               )}
@@ -180,11 +180,11 @@ export function Sidebar() {
               <div className={cn(
                 "flex transition-all duration-200 ease-out rounded-[10px]",
                 isExpanded
-                  ? "items-center gap-3 px-2 py-2.5"
-                  : "md:justify-center md:items-center md:p-2"
+                  ? "items-center gap-3 px-2 py-2.5 hover:bg-accent/50 dark:hover:bg-transparent cursor-pointer"
+                  : "md:justify-center md:items-center md:p-2 cursor-pointer"
               )}>
                 <div className={cn(
-                    "flex items-center justify-center rounded-[8px] bg-zinc-800 text-zinc-300 font-medium transition-all duration-200 shrink-0 border border-zinc-700/50",
+                    "flex items-center justify-center rounded-[8px] bg-secondary text-secondary-foreground dark:bg-zinc-800 dark:text-zinc-300 font-medium transition-all duration-200 shrink-0 border border-border dark:border-zinc-700/50",
                     isExpanded ? "h-[34px] w-[34px] text-xs" : "h-[34px] w-[34px] text-[11px]"
                   )}>
                     {user?.address?.slice(2, 4).toUpperCase() || 'BV'}
@@ -198,24 +198,24 @@ export function Sidebar() {
                       : "md:opacity-0 md:-translate-x-2 md:w-0 overflow-hidden"
                   )}
                 >
-                  <p className="text-[13px] font-medium text-zinc-300 truncate leading-none mb-1.5">
+                  <p className="text-[13px] font-medium text-foreground dark:text-zinc-300 truncate leading-none mb-1.5">
                     {user?.address ? `${user.address.slice(0, 6)}...${user.address.slice(-4)}` : 'Guest'}
                   </p>
                   <div className="flex items-center gap-1.5">
-                    <div className="w-1.5 h-1.5 rounded-full bg-zinc-600" />
-                    <p className="text-[11px] text-zinc-500 font-medium truncate leading-none">Vault Active</p>
+                    <div className="w-1.5 h-1.5 rounded-full bg-green-500 dark:bg-zinc-600" />
+                    <p className="text-[11px] text-muted-foreground dark:text-zinc-500 font-medium truncate leading-none">Vault Active</p>
                   </div>
                 </div>
               </div>
             </TooltipTrigger>
             {!isExpanded && (
-              <TooltipContent side="right" sideOffset={14} className="bg-zinc-800 text-zinc-200 border-zinc-700/60 shadow-lg px-3 py-2 rounded-md">
+              <TooltipContent side="right" sideOffset={14} className="bg-popover text-popover-foreground border-border dark:bg-zinc-800 dark:text-zinc-200 dark:border-zinc-700/60 shadow-lg px-3 py-2 rounded-md">
                 <p className="font-medium text-xs mb-1">
                   {user?.address ? `${user.address.slice(0, 6)}...${user.address.slice(-4)}` : 'Guest'}
                 </p>
                 <div className="flex items-center gap-1.5">
-                  <div className="w-1.5 h-1.5 rounded-full bg-zinc-600" />
-                  <p className="text-[10px] text-zinc-400 font-medium leading-none">Vault Active</p>
+                  <div className="w-1.5 h-1.5 rounded-full bg-green-500 dark:bg-zinc-600" />
+                  <p className="text-[10px] text-muted-foreground dark:text-zinc-400 font-medium leading-none">Vault Active</p>
                 </div>
               </TooltipContent>
             )}
@@ -228,7 +228,7 @@ export function Sidebar() {
                   variant="ghost"
                   size="sm"
                   className={cn(
-                    "mt-1 w-full justify-start gap-3 rounded-[10px] px-2 py-4 text-[13px] font-medium text-zinc-500 transition-all duration-200 hover:bg-zinc-800/40 hover:text-zinc-300 transform hover:scale-[1.02]",
+                    "mt-1 w-full justify-start gap-3 rounded-[10px] px-2 py-4 text-[13px] font-medium text-muted-foreground hover:bg-accent hover:text-accent-foreground dark:text-zinc-500 transition-all duration-200 dark:hover:bg-zinc-800/40 dark:hover:text-zinc-300 transform hover:scale-[1.02]",
                     !isExpanded && "md:justify-center md:px-0"
                   )}
                   onClick={handleLogout}
@@ -250,7 +250,7 @@ export function Sidebar() {
                 </Button>
               </TooltipTrigger>
               {!isExpanded && (
-                <TooltipContent side="right" sideOffset={14} className="bg-zinc-800 text-zinc-300 border-zinc-700/60 shadow-lg font-medium text-xs px-2.5 py-1.5 rounded-md">
+                <TooltipContent side="right" sideOffset={14} className="bg-popover text-popover-foreground border-border dark:bg-zinc-800 dark:text-zinc-300 dark:border-zinc-700/60 shadow-lg font-medium text-xs px-2.5 py-1.5 rounded-md">
                   Logout
                 </TooltipContent>
               )}

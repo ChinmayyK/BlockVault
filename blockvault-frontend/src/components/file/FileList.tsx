@@ -710,65 +710,17 @@ export const FileList: React.FC<FileListProps> = React.memo(({
           } transition-all duration-300 ease-out`}
         style={{ animationDelay: `${Math.min(index, 20) * 50}ms`, animationFillMode: 'both' }}
       >
-        <div className="p-5">
-          <div className="flex items-start justify-between mb-4">
-            <div className="flex items-center space-x-4 flex-1 min-w-0">
-              <div className={`relative w-14 h-14 bg-gradient-to-br ${getFileTypeColor(fileName)} rounded-xl flex items-center justify-center flex-shrink-0 shadow-lg group-hover:scale-110 transition-transform duration-300`}>
-                <span className="text-2xl drop-shadow-sm text-white">{getFileIcon(fileName)}</span>
-                <div className="absolute inset-0 rounded-xl bg-white/40 opacity-0 group-hover:opacity-100 transition-opacity dark:bg-white/10" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-0.5">
-                  <ScrollingText
-                    text={fileName}
-                    className="text-base font-bold text-foreground group-hover:text-primary transition-colors truncate"
-                  />
-                  <div className="flex items-center gap-1.5 opacity-60">
-                    <Lock className="w-3 h-3 text-primary" />
-                  </div>
-                </div>
-                <div className="flex items-center gap-2 text-[11px] text-muted-foreground font-medium mb-3">
-                  <span>{formatFileSize(fileSize)}</span>
-                  <span className="opacity-30">•</span>
-                  <span>{formatDate(createdAt)}</span>
-                </div>
-
-                {type === 'my-files' && (
-                  <div className="relative group inline-block">
-                    <span
-                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold cursor-default border transition-colors ${proofStatus === 'verified'
-                        ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20'
-                        : proofStatus === 'failed'
-                          ? 'bg-rose-500/10 text-rose-500 border-rose-500/20'
-                        : proofStatus === 'pending'
-                          ? 'bg-sky-500/10 text-sky-500 border-sky-500/20'
-                          : 'bg-amber-500/10 text-amber-500 border-amber-500/20'
-                        }`}
-                    >
-                      {proofStatus === 'verified' && <><span className="w-1 h-1 rounded-full bg-emerald-500 animate-pulse" /> Verified</>}
-                      {proofStatus === 'failed' && <><Trash2 className="w-3 h-3" /> Proof Failed</>}
-                      {proofStatus === 'pending' && <><Loader2 className="w-3 h-3 animate-spin" /> Generating Proof</>}
-                      {proofStatus === 'missing' && <><Clock className="w-3 h-3" /> Proof Missing</>}
-                    </span>
-                    {proofStatus === 'pending' && file?.redaction_progress && (
-                      <div className="absolute left-0 bottom-full mb-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none w-48 p-2.5 bg-slate-900 border border-slate-700/50 rounded-lg shadow-xl z-50">
-                        <div className="flex items-center justify-between text-[10px] text-sky-200/90 mb-1.5 font-medium">
-                          <span>Chunk {file.redaction_progress.current} of {file.redaction_progress.total}</span>
-                          <span>{file.redaction_progress.total > 0 ? Math.round((file.redaction_progress.current / file.redaction_progress.total) * 100) : 0}%</span>
-                        </div>
-                        <div className="h-1.5 w-full bg-slate-800 rounded-full overflow-hidden">
-                          <div
-                            className="h-full bg-sky-400 rounded-full transition-all duration-300"
-                            style={{ width: `${file.redaction_progress.total > 0 ? Math.round((file.redaction_progress.current / file.redaction_progress.total) * 100) : 0}%` }}
-                          />
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
+        <div className="p-5 flex flex-col gap-0">
+          {/* Row 1: Icon + Actions menu */}
+          <div className="flex items-start justify-between mb-3">
+            <div className={`relative w-14 h-14 bg-gradient-to-br ${getFileTypeColor(fileName)} rounded-xl flex items-center justify-center flex-shrink-0 shadow-lg group-hover:scale-110 transition-transform duration-300`}>
+              <span className="text-2xl drop-shadow-sm text-white">{getFileIcon(fileName)}</span>
+              <div className="absolute inset-0 rounded-xl bg-white/40 opacity-0 group-hover:opacity-100 transition-opacity dark:bg-white/10" />
             </div>
-            <div className="relative flex-shrink-0 z-10" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-1.5 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+              <div className="opacity-40">
+                <Lock className="w-3.5 h-3.5 text-primary" />
+              </div>
               <FileActionsMenu
                   fileId={fileId}
                   fileName={fileName}
@@ -780,11 +732,60 @@ export const FileList: React.FC<FileListProps> = React.memo(({
                   onDownload={() => handleDownload(fileId, file)}
                   onRedact={() => navigate(user?.address === 'demo_user' ? `/demo/redact/${fileId}` : `/redact/${fileId}`)}
                   onShare={() => onShare && onShare(fileId)}
-                  onVerify={() => {}} // Could dispatch a proof verification manually if needed
+                  onVerify={() => {}}
                   onDelete={() => handleDelete(fileId)}
               />
             </div>
           </div>
+
+          {/* Row 2: File name (full width) */}
+          <p
+            className="text-sm font-bold text-foreground group-hover:text-primary transition-colors leading-snug mb-1 truncate"
+            title={fileName}
+          >
+            {fileName}
+          </p>
+
+          {/* Row 3: Size + Date (stacked to avoid overflow) */}
+          <div className="flex flex-col gap-0.5 text-[11px] text-muted-foreground font-medium mb-3">
+            <span>{formatFileSize(fileSize)}</span>
+            <span>{formatDate(createdAt)}</span>
+          </div>
+
+          {/* Row 4: Proof badge */}
+          {type === 'my-files' && (
+            <div className="relative group/proof inline-flex mb-0">
+              <span
+                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold cursor-default border transition-colors ${proofStatus === 'verified'
+                  ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20'
+                  : proofStatus === 'failed'
+                    ? 'bg-rose-500/10 text-rose-500 border-rose-500/20'
+                  : proofStatus === 'pending'
+                    ? 'bg-sky-500/10 text-sky-500 border-sky-500/20'
+                    : 'bg-amber-500/10 text-amber-500 border-amber-500/20'
+                  }`}
+              >
+                {proofStatus === 'verified' && <><span className="w-1 h-1 rounded-full bg-emerald-500 animate-pulse" /> Verified</>}
+                {proofStatus === 'failed' && <><Trash2 className="w-3 h-3" /> Proof Failed</>}
+                {proofStatus === 'pending' && <><Loader2 className="w-3 h-3 animate-spin" /> Generating Proof</>}
+                {proofStatus === 'missing' && <><Clock className="w-3 h-3" /> Proof Missing</>}
+              </span>
+              {proofStatus === 'pending' && file?.redaction_progress && (
+                <div className="absolute left-0 bottom-full mb-2 opacity-0 group-hover/proof:opacity-100 transition-opacity duration-200 pointer-events-none w-48 p-2.5 bg-slate-900 border border-slate-700/50 rounded-lg shadow-xl z-50">
+                  <div className="flex items-center justify-between text-[10px] text-sky-200/90 mb-1.5 font-medium">
+                    <span>Chunk {file.redaction_progress.current} of {file.redaction_progress.total}</span>
+                    <span>{file.redaction_progress.total > 0 ? Math.round((file.redaction_progress.current / file.redaction_progress.total) * 100) : 0}%</span>
+                  </div>
+                  <div className="h-1.5 w-full bg-slate-800 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-sky-400 rounded-full transition-all duration-300"
+                      style={{ width: `${file.redaction_progress.total > 0 ? Math.round((file.redaction_progress.current / file.redaction_progress.total) * 100) : 0}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           {folder && (
             <div className="mt-2 flex items-center space-x-1.5 text-[10px] uppercase tracking-wider font-bold text-primary/70">
@@ -794,7 +795,7 @@ export const FileList: React.FC<FileListProps> = React.memo(({
           )}
 
           {/* Quick Actions */}
-          <div className="flex flex-col gap-2 mt-5 pt-4 border-t border-border/10">
+          <div className="flex flex-col gap-2 mt-4 pt-4 border-t border-border/10">
             {type === 'my-files' && canRedact(user?.role) && fileName.toLowerCase().endsWith('.pdf') && (
               <Button
                 onClick={() => navigate(user?.address === 'demo_user' ? `/demo/redact/${fileId}` : `/redact/${fileId}`)}
@@ -866,33 +867,17 @@ export const FileList: React.FC<FileListProps> = React.memo(({
         className="cursor-pointer group relative border border-border/50 bg-card rounded-2xl transition-all duration-300 ease-out hover:border-primary/30 hover:shadow-xl hover:shadow-primary/5 hover:-translate-y-1 hover:scale-[1.01]"
         style={{ animationDelay: `${Math.min(index, 20) * 50}ms`, animationFillMode: 'both' }}
       >
-        <div className="p-5">
-          <div className="flex items-start justify-between mb-4">
-            <div className="flex items-center space-x-4">
-              <div className={`relative w-14 h-14 bg-gradient-to-br ${getFileTypeColor(fileName)} rounded-xl flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform duration-300`}>
-                <span className="text-2xl drop-shadow-sm text-white">
-                  {getFileIcon(fileName)}
-                </span>
-                <div className="absolute inset-0 rounded-xl bg-white/10 opacity-0 group-hover:opacity-100 transition-opacity" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-0.5">
-                  <ScrollingText
-                    text={fileName}
-                    className="text-base font-bold text-foreground group-hover:text-primary transition-colors truncate"
-                  />
-                  <div className="flex items-center gap-1.5 opacity-60">
-                    <Share2 className="w-3 h-3 text-primary" />
-                  </div>
-                </div>
-                <div className="flex items-center gap-2 text-[11px] text-muted-foreground font-medium">
-                  <span>Shared with recipient</span>
-                  <span className="opacity-30">•</span>
-                  <span>{formatDate(createdAt)}</span>
-                </div>
-              </div>
+        <div className="p-5 flex flex-col gap-0">
+          {/* Row 1: Icon + Actions menu */}
+          <div className="flex items-start justify-between mb-3">
+            <div className={`relative w-14 h-14 bg-gradient-to-br ${getFileTypeColor(fileName)} rounded-xl flex items-center justify-center flex-shrink-0 shadow-lg group-hover:scale-110 transition-transform duration-300`}>
+              <span className="text-2xl drop-shadow-sm text-white">{getFileIcon(fileName)}</span>
+              <div className="absolute inset-0 rounded-xl bg-white/10 opacity-0 group-hover:opacity-100 transition-opacity" />
             </div>
-            <div className="relative z-10" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-1.5 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+              <div className="opacity-40">
+                <Share2 className="w-3.5 h-3.5 text-primary" />
+              </div>
               <FileActionsMenu
                   fileId={shareId}
                   fileName={fileName}
@@ -910,7 +895,22 @@ export const FileList: React.FC<FileListProps> = React.memo(({
               />
             </div>
           </div>
-          <div className="space-y-3 p-4 bg-accent rounded-xl border border-border/60">
+
+          {/* Row 2: File name (full width) */}
+          <p
+            className="text-sm font-bold text-foreground group-hover:text-primary transition-colors leading-snug mb-1 truncate"
+            title={fileName}
+          >
+            {fileName}
+          </p>
+
+          {/* Row 3: Shared metadata (stacked to avoid overflow) */}
+          <div className="flex flex-col gap-0.5 text-[11px] text-muted-foreground font-medium mb-3">
+            <span>Shared with recipient</span>
+            <span>{formatDate(createdAt)}</span>
+          </div>
+
+          <div className="space-y-3 p-4 mt-2 bg-accent rounded-xl border border-border/60">
             <div className="flex items-center space-x-2 text-sm">
               <User className="w-4 h-4 text-primary" />
               <span className="text-foreground font-medium">Recipient:</span>

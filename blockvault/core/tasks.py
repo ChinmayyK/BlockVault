@@ -240,7 +240,7 @@ def generate_redaction_proof_task(self: Any, file_id: str) -> Dict[str, Any]:
 
         try:
             from blockvault.core.audit import log_event
-            log_event("proof_generation", target_id=file_id, user_id=rec.get("owner"), details={"tx": anchor_tx})
+            log_event("proof_generation", target_id=file_id, details={"user_id": rec.get("owner"), "tx": anchor_tx})
         except Exception as exc:
             logger.warning("Failed to log proof_generation event: %s", exc)
 
@@ -288,6 +288,8 @@ def batch_anchor(self: Any) -> Dict[str, Any]:
                 seen.add(h)
 
         # §4 — Merkle duplicate protection: skip already-anchored hashes
+        from blockvault.core.db import get_db
+        db = get_db()
         anchored_coll = db["anchored_hashes"]
         already_anchored = set()
         try:
@@ -345,7 +347,7 @@ def batch_anchor(self: Any) -> Dict[str, Any]:
             
             try:
                 from blockvault.core.audit import log_event
-                log_event("blockchain_anchor", target_id=str(rec["_id"]), user_id=rec.get("owner"), details={"tx": anchor_tx})
+                log_event("blockchain_anchor", target_id=str(rec["_id"]), details={"user_id": rec.get("owner"), "tx": anchor_tx})
             except Exception as exc:
                 logger.warning("Failed to log blockchain_anchor event: %s", exc)
 
@@ -380,6 +382,7 @@ def anchor_audit_chain(self: Any) -> Dict[str, Any]:
     with app.app_context():
         from blockvault.core import onchain as onchain_mod  # noqa: WPS433
         import hashlib
+        from blockvault.core.db import get_db
 
         db = get_db()
         last_entry = db["audit_events"].find_one(sort=[("timestamp", -1)])
@@ -493,7 +496,7 @@ def analyze_redaction_async_task(self, file_id: str, key: str, org_id: str, owne
 
             try:
                 from blockvault.core.audit import log_event
-                log_event("entity_detection", target_id=canonical_id, user_id=owner, details={"count": len(entities)})
+                log_event("entity_detection", target_id=canonical_id, details={"user_id": owner, "count": len(entities)})
             except Exception as exc:
                 logger.warning("Failed to log entity_detection event: %s", exc)
 
@@ -508,13 +511,13 @@ def analyze_redaction_async_task(self, file_id: str, key: str, org_id: str, owne
 
             try:
                 from blockvault.core.audit import log_event
-                log_event("risk_scan", target_id=canonical_id, user_id=owner, details={"risk_level": risk_report.get("risk_level")})
+                log_event("risk_scan", target_id=canonical_id, details={"user_id": owner, "risk_level": risk_report.get("risk_level")})
                 if profile_name:
                     log_event(
                         action="compliance_scan",
-                        user_id=owner,
                         target_id=canonical_id,
                         details={
+                            "user_id": owner,
                             "profile_name": profile_name,
                             "detection_counts": risk_report.get("detection_counts", {}),
                             "total_detections": len(entities),

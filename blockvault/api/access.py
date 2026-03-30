@@ -227,8 +227,11 @@ def access_file(token: str):
     file_rec = None
     candidates: list = []
     try:
-        from bson import ObjectId  # type: ignore
+        from bson import ObjectId
+        from bson.errors import InvalidId
         candidates.append(ObjectId(file_id))
+    except InvalidId:
+        pass
     except Exception:
         pass
     candidates.append(file_id)
@@ -398,8 +401,11 @@ def revoke_single_magic_share(file_id: str, share_id: str):
     # Try both ObjectId and string
     candidates = []
     try:
-        from bson import ObjectId  # type: ignore
+        from bson import ObjectId
+        from bson.errors import InvalidId
         candidates.append(ObjectId(share_id))
+    except InvalidId:
+        pass
     except Exception:
         pass
     candidates.append(share_id)
@@ -455,9 +461,12 @@ def verify_magic_link_proof(token: str):
     files_coll = get_db()["files"]
     
     # Resolve ObjectId vs str
-    from bson import ObjectId  # type: ignore
     try:
+        from bson import ObjectId
+        from bson.errors import InvalidId
         file_rec = files_coll.find_one({"_id": ObjectId(file_id)})
+    except InvalidId:
+        file_rec = files_coll.find_one({"_id": file_id})
     except Exception:
         file_rec = files_coll.find_one({"_id": file_id})
         

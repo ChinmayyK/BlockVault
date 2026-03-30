@@ -49,3 +49,4 @@ Cargo.lock
 *.tmp
 *.temp
 storage/
+bandit_report.json

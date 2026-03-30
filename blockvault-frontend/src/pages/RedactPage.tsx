@@ -36,6 +36,7 @@ export default function RedactPage() {
     const [showPassphraseModal, setShowPassphraseModal] = useState(false);
     const [isLoadingDocument, setIsLoadingDocument] = useState(false);
     const [isUnlockingDocument, setIsUnlockingDocument] = useState(false);
+    const [documentType, setDocumentType] = useState<string>("application/pdf");
     const [redactionResult, setRedactionResult] = useState<RedactApplyResponse | null>(null);
     const [redactionComplete, setRedactionComplete] = useState(false);
     const [redactedFileUrl, setRedactedFileUrl] = useState<string | null>(null);
@@ -101,6 +102,7 @@ export default function RedactPage() {
             }
             return null;
         });
+        setDocumentType("application/pdf");
         setFileName("");
         setPassphraseInput("");
         setConfirmedPassphrase("");
@@ -257,10 +259,12 @@ export default function RedactPage() {
             }
 
             const contentType = (response.headers.get("content-type") || "").toLowerCase();
-            if (!contentType.includes("application/pdf")) {
+            if (!contentType.includes("application/pdf") && !contentType.startsWith("image/")) {
                 const errText = await response.text().catch(() => "");
                 throw new Error(`unexpected-content:${contentType}:${errText.slice(0, 200)}`);
             }
+            
+            setDocumentType(contentType);
 
             const blob = await response.blob();
             if (!blob.size) {
@@ -1145,6 +1149,7 @@ export default function RedactPage() {
                                 onHoverEntity={setHoveredEntityId}
                                 reviewMode={reviewMode}
                                 currentReviewEntityId={entities[currentDetectionIndex]?.id || null}
+                                documentType={documentType}
                             />
                         )
                     ) : isLoadingDocument || isUnlockingDocument ? (

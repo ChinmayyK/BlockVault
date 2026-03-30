@@ -129,7 +129,7 @@ function VirtualPage({
         >
             {isVisible ? (
                 <div
-                    className="relative select-none"
+                    className={`relative select-none ${activeTool === "draw" && !previewMode ? "cursor-crosshair" : ""}`}
                     onMouseDown={handleMouseDown}
                     onMouseMove={handleMouseMove}
                     onMouseUp={handleMouseUp}
@@ -178,7 +178,7 @@ function VirtualPage({
 
                             if (previewMode && !reviewMode && !heatmapMode) {
                                 if (isApproved) {
-                                    fill = "rgba(0,0,0,1)";
+                                    fill = "rgba(15,23,42,0.95)"; // Semi-dark overlay, not pure black
                                 }
                             } else {
                                 if (heatmapMode) {
@@ -260,7 +260,7 @@ function VirtualPage({
                             return (
                                 <div
                                     key={box.id}
-                                    className="absolute bg-black border border-black pointer-events-none"
+                                    className="absolute bg-slate-900 border border-slate-900 pointer-events-none opacity-95"
                                     style={{ left: box.x * scale, top: box.y * scale, width: box.width * scale, height: box.height * scale, zIndex: 11 }}
                                 />
                             );
@@ -287,7 +287,7 @@ function VirtualPage({
                                     }
                                 }}
                                 bounds="parent"
-                                className={`absolute border-2 ${isSelected ? 'border-red-500 shadow-[0_0_0_2px_rgba(239,68,68,0.3)]' : 'border-black'} bg-black/80 z-20 cursor-move transition-shadow`}
+                                className={`absolute border-2 ${isSelected ? 'border-red-500 shadow-[0_0_0_2px_rgba(239,68,68,0.3)]' : 'border-slate-800'} bg-slate-900/85 z-20 cursor-move transition-shadow`}
                                 disableDragging={activeTool !== "select"}
                                 enableResizing={activeTool === "select"}
                                 onMouseDown={(e) => {

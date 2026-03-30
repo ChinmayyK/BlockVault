@@ -1,6 +1,6 @@
 import logging
 from flask import Blueprint, jsonify
-from blockvault.core.access_decorators import require_auth
+from blockvault.core.security import require_auth
 from blockvault.core.audit import _audit_collection
 from blockvault.core.merkle_tree import MerkleLog
 

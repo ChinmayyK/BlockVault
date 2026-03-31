@@ -84,3 +84,4 @@ def rotate_file_key(file_id: str, owner: str) -> Optional[str]:
     except Exception as exc:
         logger.warning("rotate_file_key failed: %s", exc)
         return None
+

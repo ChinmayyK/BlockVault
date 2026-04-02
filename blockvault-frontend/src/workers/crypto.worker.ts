@@ -21,6 +21,10 @@ function concatBytes(...arrays: Uint8Array[]): Uint8Array {
   return result;
 }
 
+function bytesToHex(bytes: Uint8Array): string {
+  return Array.from(bytes).map((byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
 // Generate a random string for recovery key
 function generateRecoveryKey(): string {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
@@ -241,6 +245,28 @@ self.onmessage = async (e: MessageEvent) => {
         result: { decryptedBlob: fileBlob }
       });
       
+    } else if (type === 'PREPARE_EMAIL_SHARE') {
+      const { wrappedKey, passphrase } = payload;
+
+      // 1. Recover the file key using the sender's passphrase or vault key
+      const fileKeyBytes = await unwrapKey(wrappedKey, passphrase);
+
+      // 2. Generate a high-entropy recipient secret for the magic-link fragment
+      const recipientSecret = crypto.getRandomValues(new Uint8Array(32));
+      const recipientSecretHex = bytesToHex(recipientSecret);
+
+      // 3. Re-wrap the file key with the recipient secret so the access page can unwrap it
+      const recipientEncryptedFileKey = await wrapKey(fileKeyBytes, recipientSecretHex);
+
+      self.postMessage({
+        type: 'SUCCESS',
+        jobId,
+        result: {
+          recipientSecretHex,
+          recipientEncryptedFileKey,
+        }
+      });
+
     } else if (type === 'WRAP_VAULT_KEY') {
       const { passphrase } = payload;
       

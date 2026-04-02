@@ -11,6 +11,8 @@ from typing import Dict, Tuple
 
 import argon2
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from ecies import encrypt as ecies_encrypt, decrypt as ecies_decrypt
 
 # ---------------------------------------------------------------------------
@@ -25,6 +27,11 @@ _ARGON2_HASHER = argon2.PasswordHasher(
     hash_len=32,
     salt_len=16
 )
+
+_PBKDF2_ITERATIONS = 250000
+_WRAPPED_KEY_SALT_BYTES = 16
+_WRAPPED_KEY_IV_BYTES = 12
+_CHUNKED_MAGIC_HEADER = b"BV1\x00"
 
 
 # ---------------------------------------------------------------------------
@@ -63,6 +70,35 @@ def decrypt_with_aes_gcm(key: bytes, ciphertext_with_nonce: bytes, aad: bytes = 
     return aesgcm.decrypt(nonce, ciphertext, aad)
 
 
+def decrypt_chunked_payload(key: bytes, payload: bytes, aad: bytes = b"") -> bytes:
+    """Decrypt either the worker chunked format or a standard nonce-prefixed blob."""
+    if not payload.startswith(_CHUNKED_MAGIC_HEADER):
+        return decrypt_with_aes_gcm(key, payload, aad)
+
+    aesgcm = AESGCM(key)
+    plaintext_parts = []
+    offset = len(_CHUNKED_MAGIC_HEADER)
+
+    while offset < len(payload):
+        if offset + _WRAPPED_KEY_IV_BYTES + 4 > len(payload):
+            raise ValueError("Invalid chunked payload header")
+
+        iv = payload[offset:offset + _WRAPPED_KEY_IV_BYTES]
+        offset += _WRAPPED_KEY_IV_BYTES
+
+        chunk_len = int.from_bytes(payload[offset:offset + 4], "big")
+        offset += 4
+
+        if chunk_len <= 0 or offset + chunk_len > len(payload):
+            raise ValueError("Invalid chunked payload length")
+
+        encrypted_chunk = payload[offset:offset + chunk_len]
+        offset += chunk_len
+        plaintext_parts.append(aesgcm.decrypt(iv, encrypted_chunk, aad))
+
+    return b"".join(plaintext_parts)
+
+
 # ---------------------------------------------------------------------------
 # Passphrase Wrapping
 # ---------------------------------------------------------------------------
@@ -78,6 +114,50 @@ def _derive_argon2_key(secret: str, salt: bytes) -> bytes:
         hash_len=_ARGON2_HASHER.hash_len,
         type=argon2.low_level.Type.ID,
     )
+
+
+def _derive_pbkdf2_key(secret: str, salt: bytes) -> bytes:
+    """Derive a 32-byte key using PBKDF2-SHA256."""
+    return PBKDF2HMAC(
+        algorithm=hashes.SHA256(),
+        length=32,
+        salt=salt,
+        iterations=_PBKDF2_ITERATIONS,
+    ).derive(secret.encode("utf-8"))
+
+
+def wrap_file_key_with_secret_bundle(file_key: bytes, secret: str) -> str:
+    """Wrap a file key using the bundled PBKDF2 format used by the web worker.
+
+    Output format: Base64( salt[16] || iv[12] || ciphertext+tag )
+    """
+    salt = os.urandom(_WRAPPED_KEY_SALT_BYTES)
+    iv = os.urandom(_WRAPPED_KEY_IV_BYTES)
+    derived_key = _derive_pbkdf2_key(secret, salt)
+    wrapped = AESGCM(derived_key).encrypt(iv, file_key, None)
+    return base64.b64encode(salt + iv + wrapped).decode("ascii")
+
+
+def unwrap_file_key_with_secret_bundle(wrapped_key_b64: str, secret: str) -> bytes:
+    """Unwrap a PBKDF2 bundled file key from the browser worker format."""
+    try:
+        raw = base64.b64decode(wrapped_key_b64)
+    except Exception as e:
+        raise ValueError(f"Invalid base64 encoding for wrapped key: {e}") from e
+
+    min_size = _WRAPPED_KEY_SALT_BYTES + _WRAPPED_KEY_IV_BYTES + 16
+    if len(raw) < min_size:
+        raise ValueError("Wrapped key payload too short")
+
+    salt = raw[:_WRAPPED_KEY_SALT_BYTES]
+    iv = raw[_WRAPPED_KEY_SALT_BYTES:_WRAPPED_KEY_SALT_BYTES + _WRAPPED_KEY_IV_BYTES]
+    wrapped_key = raw[_WRAPPED_KEY_SALT_BYTES + _WRAPPED_KEY_IV_BYTES:]
+    derived_key = _derive_pbkdf2_key(secret, salt)
+
+    try:
+        return AESGCM(derived_key).decrypt(iv, wrapped_key, None)
+    except Exception as e:
+        raise ValueError("Decryption failed. Incorrect secret or corrupted data.") from e
 
 def wrap_file_key_with_passphrase(file_key: bytes, passphrase: str) -> Tuple[str, str]:
     """Wrap a file key using a key derived from a passphrase via Argon2.

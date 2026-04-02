@@ -72,6 +72,65 @@ def _check_passphrase_strength(passphrase: str) -> None:
         abort(400, "passphrase too common — choose a stronger one")
 
 
+def _unwrap_wrapped_file_key(rec: Dict[str, Any], key: str) -> Optional[bytes]:
+    """Recover a file key from either legacy or V2 wrapped key formats."""
+    from ..core.key_recovery import (
+        unwrap_file_key_with_passphrase,
+        unwrap_file_key_with_recovery_key,
+        unwrap_file_key_with_secret_bundle,
+        unwrap_file_key_with_wallet,
+    )
+
+    wrapped_keys = rec.get("wrapped_keys", {})
+    metadata = rec.get("wrapped_key_metadata", {})
+
+    if not isinstance(wrapped_keys, dict):
+        return None
+    if not isinstance(metadata, dict):
+        metadata = {}
+
+    passphrase_wrapped = wrapped_keys.get("passphrase")
+    if isinstance(passphrase_wrapped, str):
+        try:
+            if metadata.get("passphrase_kdf") == "pbkdf2-sha256-bundled" or (
+                metadata.get("v2_e2ee") and "argon2_salt" not in metadata
+            ):
+                return unwrap_file_key_with_secret_bundle(passphrase_wrapped, key)
+            if "argon2_salt" in metadata:
+                return unwrap_file_key_with_passphrase(
+                    passphrase_wrapped,
+                    key,
+                    metadata["argon2_salt"],
+                )
+        except ValueError:
+            pass
+
+    recovery_wrapped = wrapped_keys.get("recovery")
+    if isinstance(recovery_wrapped, str):
+        try:
+            if metadata.get("recovery_kdf") == "pbkdf2-sha256-bundled" or (
+                metadata.get("v2_e2ee") and "recovery_salt" not in metadata
+            ):
+                return unwrap_file_key_with_secret_bundle(recovery_wrapped, key)
+            if "recovery_salt" in metadata:
+                return unwrap_file_key_with_recovery_key(
+                    recovery_wrapped,
+                    key,
+                    metadata["recovery_salt"],
+                )
+        except ValueError:
+            pass
+
+    wallet_wrapped = wrapped_keys.get("wallet")
+    if isinstance(wallet_wrapped, str):
+        try:
+            return unwrap_file_key_with_wallet(wallet_wrapped, key)
+        except ValueError:
+            pass
+
+    return None
+
+
 def _decrypt_file_bytes(rec: Dict[str, Any], key: str) -> bytes:
     """Fetch encrypted blob from S3 and decrypt it.
     
@@ -91,50 +150,15 @@ def _decrypt_file_bytes(rec: Dict[str, Any], key: str) -> bytes:
 
     if "wrapped_keys" in rec:
         # v2 Key Wrapping flow
-        from ..core.key_recovery import (
-            unwrap_file_key_with_passphrase,
-            unwrap_file_key_with_recovery_key,
-            unwrap_file_key_with_wallet,
-            decrypt_with_aes_gcm
-        )
+        from ..core.key_recovery import decrypt_chunked_payload
         
-        wrapped_keys = rec["wrapped_keys"]
-        metadata = rec.get("wrapped_key_metadata", {})
-        file_key = None
-        
-        # 1. Try Passphrase
-        if not file_key and "passphrase" in wrapped_keys and "argon2_salt" in metadata:
-            try:
-                file_key = unwrap_file_key_with_passphrase(
-                    wrapped_keys["passphrase"], key, metadata["argon2_salt"]
-                )
-            except ValueError:
-                pass
-                
-        # 2. Try Recovery Key (looks like ZXA9-...)
-        if not file_key and "recovery" in wrapped_keys and "recovery_salt" in metadata:
-            try:
-                file_key = unwrap_file_key_with_recovery_key(
-                    wrapped_keys["recovery"], key, metadata["recovery_salt"]
-                )
-            except ValueError:
-                pass
-                
-        # 3. Try Wallet ECIES (assuming key is the raw hex eth private key)
-        if not file_key and "wallet" in wrapped_keys:
-            try:
-                file_key = unwrap_file_key_with_wallet(
-                    wrapped_keys["wallet"], key
-                )
-            except ValueError:
-                pass
-                
+        file_key = _unwrap_wrapped_file_key(rec, key)
         if not file_key:
             abort(400, "decryption failed (bad key/passphrase/recovery key)")
             
         try:
             aad = rec.get("aad") or ""
-            result = decrypt_with_aes_gcm(file_key, encrypted_bytes, aad.encode("utf-8"))
+            result = decrypt_chunked_payload(file_key, encrypted_bytes, aad.encode("utf-8"))
             _log.info("_decrypt_file_bytes: AES-GCM decrypt OK (%d bytes)", len(result))
             return result
         except Exception as exc:
@@ -288,10 +312,16 @@ def upload_file():  # type: ignore
     if up_file.filename == "":
         abort(400, "empty filename")
     key = request.form.get("key")
-    if not key:
-        abort(400, "key (passphrase) required")
-    key = _sanitize_str(key)
-    _check_passphrase_strength(key)
+    wrapped_keys_json = request.form.get("wrapped_keys")
+    is_v2_upload = bool(wrapped_keys_json)
+    if is_v2_upload:
+        if key is not None:
+            key = _sanitize_str(key)
+    else:
+        if not key:
+            abort(400, "key (passphrase) required for legacy upload")
+        key = _sanitize_str(key)
+        _check_passphrase_strength(key)
     aad = request.form.get("aad") or None
     folder = request.form.get("folder") or None
     if folder is not None:
@@ -354,10 +384,9 @@ def upload_file():  # type: ignore
                 upsert=True,
             )
     
-    # Encrypt the passphrase with owner's public key for secure storage
     owner_encrypted_key = None
     owner_doc = _users_collection().find_one({"address": owner})
-    if owner_doc and owner_doc.get("sharing_pubkey"):
+    if key and owner_doc and owner_doc.get("sharing_pubkey"):
         try:
             owner_pubkey = _load_public_key(owner_doc["sharing_pubkey"])
             encrypted_bytes = owner_pubkey.encrypt(
@@ -378,18 +407,26 @@ def upload_file():  # type: ignore
     # E2EE Phase 1 Architecture: Client handles all Cryptography!
     # We simply read the client-wrapped keys from the form payload.
     # -------------------------------------------------------------
-    wrapped_keys_json = request.form.get("wrapped_keys")
-    if not wrapped_keys_json:
-        abort(400, "wrapped_keys metadata required for E2EE payload.")
-        
-    try:
-        frontend_wrapped_keys = json.loads(wrapped_keys_json)
-    except Exception as e:
-        abort(400, f"invalid wrapped_keys json: {e}")
-        
-    # The 'data' buffer is fully AES-GCM encrypted by the browser Web Worker.
-    # We just store it directly to Object Storage.
-    encrypted_bytes = data
+    frontend_wrapped_keys: Optional[Dict[str, Any]] = None
+    if wrapped_keys_json:
+        try:
+            parsed_wrapped_keys = json.loads(wrapped_keys_json)
+        except Exception as e:
+            abort(400, f"invalid wrapped_keys json: {e}")
+        if not isinstance(parsed_wrapped_keys, dict):
+            abort(400, "wrapped_keys must decode to an object")
+        frontend_wrapped_keys = parsed_wrapped_keys
+
+    if frontend_wrapped_keys is not None:
+        # The 'data' buffer is fully AES-GCM encrypted by the browser Web Worker.
+        encrypted_bytes = data
+    else:
+        try:
+            encrypted_bytes = crypto_encrypt(data, key, aad)
+        except CryptoDaemonError:
+            abort(503, "crypto service unavailable")
+        except Exception as exc:
+            abort(400, f"failed to encrypt upload: {type(exc).__name__}")
 
     enc_filename = generate_encrypted_filename()
 
@@ -422,15 +459,16 @@ def upload_file():  # type: ignore
             # Legacy support (will be None but kept for backward compat)
             "owner_encrypted_key": owner_encrypted_key,
             
-            # E2EE fully client-wrapped keys
-            "wrapped_keys": frontend_wrapped_keys,
-            # The salt is now bundled inside the payload generated by the TS worker
-            # so we don't need a separate metadata block anymore, but we'll include
-            # a placeholder to avoid breaking DB schema validations downstream.
-            "wrapped_key_metadata": {
-                "v2_e2ee": True
-            }
         }
+
+        if frontend_wrapped_keys is not None:
+            record["wrapped_keys"] = frontend_wrapped_keys
+            record["wrapped_key_metadata"] = {
+                "v2_e2ee": True,
+                "wrapped_key_format": "pbkdf2-sha256-bundled",
+                "passphrase_kdf": "pbkdf2-sha256-bundled",
+                "recovery_kdf": "pbkdf2-sha256-bundled",
+            }
         
         # Since wallet wrapping is done manually on Python, we might reintegrate 
         # it later. For now, we trust the frontend payload.
@@ -1509,20 +1547,9 @@ def share_file(file_id: str):  # type: ignore
         
         # V1 Legacy Fallback Share Payload
         else:
-            from ..core.key_recovery import (
-                unwrap_file_key_with_passphrase as _unwrap_pp,
-                wrap_file_key_with_hkdf,
-            )
+            from ..core.key_recovery import wrap_file_key_with_hkdf
 
-            wrapped = file_rec.get("wrapped_keys", {})
-            metadata = file_rec.get("wrapped_key_metadata", {})
-            file_key = None
-
-            if passphrase and "passphrase" in wrapped and "argon2_salt" in metadata:
-                try:
-                    file_key = _unwrap_pp(wrapped["passphrase"], passphrase, metadata["argon2_salt"])
-                except ValueError:
-                    pass
+            file_key = _unwrap_wrapped_file_key(file_rec, passphrase) if passphrase else None
 
             if not file_key:
                 abort(400, "could not recover file key — invalid passphrase or missing wrapped keys")
@@ -1859,27 +1886,10 @@ def zkml_summarize_document(file_id: str):  # type: ignore
         
         current_app.logger.info(f"ZKML summarization requested for file {file_id} by {address}")
         
-        # Reconstruct encrypted file path (same as download_file does)
-        enc_filename = file_record.get('enc_filename')
-        if not enc_filename:
-            abort(404, f"No enc_filename in file record for file_id: {file_id}")
-        
-        # Fetch encrypted blob from S3
         try:
-            encrypted_bytes = s3_mod.download_blob(enc_filename)
-        except FileNotFoundError:
-            current_app.logger.error(f"Encrypted file not found in S3: {enc_filename}")
-            abort(404, f"Encrypted file not found in object storage: {enc_filename}")
-        
-        # Decrypt in-memory via the crypto daemon
-        try:
-            decrypted_content = crypto_decrypt(encrypted_bytes, passphrase, file_record.get("aad"))
-        except CryptoDaemonError:
-            current_app.logger.error("Crypto daemon unreachable during ZKML decrypt")
-            abort(503, "crypto service unavailable")
-        except Exception as e:
-            current_app.logger.error(f"Decryption failed: {str(e)}")
-            abort(400, f"Decryption failed (bad passphrase or corrupted data): {str(e)}")
+            decrypted_content = _decrypt_file_bytes(file_record, passphrase)
+        except Exception:
+            raise
         
         # Convert to text based on file type
         filename = file_record.get('original_name', '')
@@ -1971,17 +1981,18 @@ def recover_file(file_id: str):  # type: ignore
     wrapped_keys = rec.get("wrapped_keys", {})
     metadata = rec.get("wrapped_key_metadata", {})
     
-    if "recovery" not in wrapped_keys or "recovery_salt" not in metadata:
+    if "recovery" not in wrapped_keys:
         abort(400, "file does not support key recovery (legacy encryption)")
-        
-    from ..core.key_recovery import unwrap_file_key_with_recovery_key
     
     try:
         # Attempt to unwrap using the recovery key. 
         # If it succeeds, the recovery key is valid. We don't need to return the file_key itself.
-        _ = unwrap_file_key_with_recovery_key(
-            wrapped_keys["recovery"], recovery_key, metadata["recovery_salt"]
+        recovered_key = _unwrap_wrapped_file_key(
+            {"wrapped_keys": {"recovery": wrapped_keys["recovery"]}, "wrapped_key_metadata": metadata},
+            recovery_key,
         )
+        if not recovered_key:
+            raise ValueError("invalid recovery key")
         current_app.logger.info(f"Key recovery verified for file {canonical_id}")
         return {"success": True, "file_id": canonical_id}
     except ValueError:
@@ -2015,32 +2026,50 @@ def reset_passphrase(file_id: str):  # type: ignore
     wrapped_keys = rec.get("wrapped_keys", {})
     metadata = rec.get("wrapped_key_metadata", {})
     
-    if "recovery" not in wrapped_keys or "recovery_salt" not in metadata:
+    if "recovery" not in wrapped_keys:
         abort(400, "file does not support key recovery (legacy encryption)")
         
     from ..core.key_recovery import (
-        unwrap_file_key_with_recovery_key,
-        wrap_file_key_with_passphrase
+        wrap_file_key_with_passphrase,
+        wrap_file_key_with_secret_bundle,
     )
     
     try:
         # 1. Recover the plain file_key
-        file_key = unwrap_file_key_with_recovery_key(
-            wrapped_keys["recovery"], recovery_key, metadata["recovery_salt"]
+        file_key = _unwrap_wrapped_file_key(
+            {"wrapped_keys": {"recovery": wrapped_keys["recovery"]}, "wrapped_key_metadata": metadata},
+            recovery_key,
         )
+        if not file_key:
+            raise ValueError("invalid recovery key")
         
         # 2. Wrap it with the new passphrase
-        new_salt, new_wrapped = wrap_file_key_with_passphrase(file_key, new_passphrase)
+        update_fields: Dict[str, Any]
+        unset_fields: Dict[str, Any] = {}
+        if metadata.get("v2_e2ee") or metadata.get("passphrase_kdf") == "pbkdf2-sha256-bundled":
+            new_wrapped = wrap_file_key_with_secret_bundle(file_key, new_passphrase)
+            update_fields = {
+                "wrapped_keys.passphrase": new_wrapped,
+                "wrapped_key_metadata.v2_e2ee": True,
+                "wrapped_key_metadata.wrapped_key_format": "pbkdf2-sha256-bundled",
+                "wrapped_key_metadata.passphrase_kdf": "pbkdf2-sha256-bundled",
+            }
+            if "argon2_salt" in metadata:
+                unset_fields["wrapped_key_metadata.argon2_salt"] = ""
+        else:
+            new_salt, new_wrapped = wrap_file_key_with_passphrase(file_key, new_passphrase)
+            update_fields = {
+                "wrapped_keys.passphrase": new_wrapped,
+                "wrapped_key_metadata.argon2_salt": new_salt,
+            }
         
         # 3. Update the database
+        update_doc: Dict[str, Any] = {"$set": update_fields}
+        if unset_fields:
+            update_doc["$unset"] = unset_fields
         _files_collection().update_one(
             {"_id": rec["_id"]},
-            {
-                "$set": {
-                    "wrapped_keys.passphrase": new_wrapped,
-                    "wrapped_key_metadata.argon2_salt": new_salt
-                }
-            }
+            update_doc,
         )
         
         current_app.logger.info(f"Passphrase reset successful for file {canonical_id}")
@@ -2151,5 +2180,3 @@ def get_file_activity(file_id: str):
             })
             
     return events
-
-

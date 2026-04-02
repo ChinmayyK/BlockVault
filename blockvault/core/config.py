@@ -5,6 +5,9 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+DEFAULT_SECRET_KEY = "dev-secret-key-change"
+DEFAULT_JWT_SECRET = "dev-jwt-secret-change"
+
 @dataclass
 class Config:
     env: str
@@ -46,8 +49,8 @@ def load_config() -> Config:
     env = os.getenv("FLASK_ENV", "development")
     debug = env != "production"
     mongo_uri = os.getenv("MONGO_URI", "mongodb://localhost:27017/blockvault")
-    secret_key = os.getenv("SECRET_KEY", "dev-secret-key-change")
-    jwt_secret = os.getenv("JWT_SECRET", "dev-jwt-secret-change")
+    secret_key = os.getenv("SECRET_KEY", DEFAULT_SECRET_KEY)
+    jwt_secret = os.getenv("JWT_SECRET", DEFAULT_JWT_SECRET)
     jwt_exp_minutes = int(os.getenv("JWT_EXP_MINUTES", "60"))
     ipfs_api_url = os.getenv("IPFS_API_URL")
     ipfs_api_token = os.getenv("IPFS_API_TOKEN")
@@ -74,6 +77,13 @@ def load_config() -> Config:
     email_from = os.getenv("EMAIL_FROM", "noreply@blockvault.io")
     frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
     redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/1")
+
+    if env == "production":
+        if not secret_key or secret_key == DEFAULT_SECRET_KEY:
+            raise ValueError("SECRET_KEY must be configured to a non-default value in production")
+        if not jwt_secret or jwt_secret == DEFAULT_JWT_SECRET:
+            raise ValueError("JWT_SECRET must be configured to a non-default value in production")
+
     return Config(
         env=env,
         debug=debug,

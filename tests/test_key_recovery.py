@@ -5,11 +5,16 @@ import base64
 import os
 import pytest
 
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
 from blockvault.core.key_recovery import (
+    decrypt_chunked_payload,
     generate_file_key,
     generate_recovery_key,
     encrypt_with_aes_gcm,
     decrypt_with_aes_gcm,
+    wrap_file_key_with_secret_bundle,
+    unwrap_file_key_with_secret_bundle,
     wrap_file_key_with_passphrase,
     unwrap_file_key_with_passphrase,
     wrap_file_key_with_recovery_key,
@@ -55,6 +60,24 @@ def test_aes_gcm_encryption():
         decrypt_with_aes_gcm(wrong_key, ciphertext_nonce, aad)
 
 
+def test_chunked_payload_decryption():
+    file_key = generate_file_key()
+    aad = b"ctx"
+    plaintext = b"Highly sensitive legal document" * 3
+    aesgcm = AESGCM(file_key)
+
+    payload = bytearray(b"BV1\x00")
+    for start in range(0, len(plaintext), 17):
+        chunk = plaintext[start:start + 17]
+        iv = os.urandom(12)
+        encrypted_chunk = aesgcm.encrypt(iv, chunk, aad)
+        payload.extend(iv)
+        payload.extend(len(encrypted_chunk).to_bytes(4, "big"))
+        payload.extend(encrypted_chunk)
+
+    assert decrypt_chunked_payload(file_key, bytes(payload), aad) == plaintext
+
+
 def test_passphrase_wrapping():
     file_key = generate_file_key()
     passphrase = "my_secure_password123"
@@ -71,6 +94,20 @@ def test_passphrase_wrapping():
     # Unwrap with wrong passphrase
     with pytest.raises(ValueError, match="Decryption failed"):
         unwrap_file_key_with_passphrase(wrapped_b64, "wrong_password", salt_b64)
+
+
+def test_bundled_secret_wrapping():
+    file_key = generate_file_key()
+    secret = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+    wrapped_b64 = wrap_file_key_with_secret_bundle(file_key, secret)
+    assert isinstance(wrapped_b64, str)
+
+    unwrapped_key = unwrap_file_key_with_secret_bundle(wrapped_b64, secret)
+    assert unwrapped_key == file_key
+
+    with pytest.raises(ValueError, match="Decryption failed"):
+        unwrap_file_key_with_secret_bundle(wrapped_b64, "wrong-secret")
 
 
 def test_recovery_key_wrapping():

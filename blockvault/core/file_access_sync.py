@@ -1,4 +1,5 @@
 from __future__ import annotations
+import logging
 """Background poller that ingests on-chain FileAccessRegistry events into the
 off-chain convenience index (file_access_roles collection).
 
@@ -29,6 +30,8 @@ from typing import Any, Dict, Optional, List
 from flask import current_app
 from web3 import Web3
 from web3.middleware import geth_poa_middleware
+
+_logger = logging.getLogger(__name__)
 
 _STATE_ID = "global"
 
@@ -73,10 +76,10 @@ def _backfill_hash_index():
                 continue
             try:
                 coll_idx.update_one({"file_id": fid}, {"$set": {"file_id": fid, "file_hash": _keccak(fid)}}, upsert=True)
-            except Exception:
-                pass
-    except Exception:
-        pass
+            except Exception as exc:
+                _logger.debug("Skipped hash index for file %s: %s", fid, exc)
+    except Exception as exc:
+        _logger.debug("Hash index backfill failed: %s", exc)
 
 
 def _load_hash_map() -> Dict[str, str]:
@@ -87,23 +90,24 @@ def _load_hash_map() -> Dict[str, str]:
             fid = d.get("file_id")
             if isinstance(fh, str) and isinstance(fid, str):
                 mapping[fh.lower()] = fid
-    except Exception:
-        pass
+    except Exception as exc:
+        _logger.debug("Hash map load failed: %s", exc)
     return mapping
 
 
 def _update_state(new_last_block: int, chain_id: int, contract: str) -> None:
     try:
         _coll_state().update_one({"_id": _STATE_ID}, {"$set": {"last_block": new_last_block, "chain_id": chain_id, "contract": contract}}, upsert=True)
-    except Exception:
-        pass
+    except Exception as exc:
+        _logger.debug("State update failed: %s", exc)
 
 
 def _get_state() -> Dict[str, Any]:
     try:
         doc = _coll_state().find_one({"_id": _STATE_ID}) or {}
         return doc
-    except Exception:
+    except Exception as exc:
+        _logger.debug("State read failed: %s", exc)
         return {}
 
 
@@ -111,15 +115,15 @@ def _record_role(file_id: str, address: str, role: str):
     try:
         doc = {"file_id": file_id, "address": Web3.to_checksum_address(address), "role": role, "updated_at": int(time.time() * 1000)}
         _coll_roles().update_one({"file_id": file_id, "address": doc["address"]}, {"$set": doc}, upsert=True)
-    except Exception:
-        pass
+    except Exception as exc:
+        _logger.warning("Failed to record role for file %s, address %s: %s", file_id, address, exc)
 
 
 def _delete_role(file_id: str, address: str):
     try:
         _coll_roles().delete_one({"file_id": file_id, "address": Web3.to_checksum_address(address)})
-    except Exception:
-        pass
+    except Exception as exc:
+        _logger.warning("Failed to delete role for file %s, address %s: %s", file_id, address, exc)
 
 
 def _poll_loop():
@@ -134,8 +138,8 @@ def _poll_loop():
     w3 = Web3(Web3.HTTPProvider(rpc))
     try:
         w3.middleware_onion.inject(geth_poa_middleware, layer=0)
-    except Exception:
-        pass
+    except Exception as exc:
+        _logger.debug("PoA middleware injection skipped: %s", exc)
     try:
         chain_id = w3.eth.chain_id
     except Exception as e:

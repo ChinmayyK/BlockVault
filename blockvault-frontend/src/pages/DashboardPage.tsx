@@ -38,7 +38,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/contexts/AuthContext";
 import { useFiles } from "@/contexts/FileContext";
-import { FileUpload } from "@/components/file/FileUpload";
+import { MultiFileUpload } from "@/components/file/MultiFileUpload";
 import { FileList } from "@/components/file/FileList";
 import { FileDetailsPanel } from "@/components/file/FileDetailsPanel";
 import { FilePreviewPanel } from "@/components/file/FilePreviewPanel";
@@ -395,7 +395,7 @@ export default function DashboardPage() {
 
       {/* Upload Modal */}
       {showUpload && (
-        <FileUpload onClose={() => setShowUpload(false)} />
+        <MultiFileUpload onClose={() => setShowUpload(false)} />
       )}
       </div>
     </div>

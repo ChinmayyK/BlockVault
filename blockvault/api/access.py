@@ -230,10 +230,8 @@ def access_file(token: str):
         from bson import ObjectId
         from bson.errors import InvalidId
         candidates.append(ObjectId(file_id))
-    except InvalidId:
-        pass
-    except Exception:
-        pass
+    except (InvalidId, TypeError):
+        pass  # file_id is not a valid ObjectId format — use string fallback
     candidates.append(file_id)
 
     for candidate in candidates:
@@ -404,10 +402,8 @@ def revoke_single_magic_share(file_id: str, share_id: str):
         from bson import ObjectId
         from bson.errors import InvalidId
         candidates.append(ObjectId(share_id))
-    except InvalidId:
-        pass
-    except Exception:
-        pass
+    except (InvalidId, TypeError):
+        pass  # share_id is not a valid ObjectId format — use string fallback
     candidates.append(share_id)
 
     for candidate in candidates:

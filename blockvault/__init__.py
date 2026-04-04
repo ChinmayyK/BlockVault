@@ -258,8 +258,8 @@ def create_app() -> Flask:
     from .api.access import bp as access_bp
     app.register_blueprint(access_bp, url_prefix="/access")
 
-    from .mock_cases import register_case_routes
-    register_case_routes(app)
+    from .api.cases import bp as cases_bp
+    app.register_blueprint(cases_bp)
 
     # -----------------------------------------------------------------
     # Utility / health endpoints

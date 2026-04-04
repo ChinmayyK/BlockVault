@@ -1,4 +1,5 @@
 from __future__ import annotations
+import logging
 """Optional smart-contract based file access checks.
 
 This module provides a minimal abstraction to allow querying an on-chain
@@ -16,6 +17,8 @@ from typing import Any
 from flask import current_app
 from web3 import Web3
 from web3.middleware import geth_poa_middleware
+
+logger = logging.getLogger(__name__)
 
 # Simplified ABI subset for FileAccessRegistry:
 # canView(bytes32,address) -> bool
@@ -57,12 +60,13 @@ def _get_contract():  # type: ignore
         w3 = Web3(Web3.HTTPProvider(rpc))
         try:
             w3.middleware_onion.inject(geth_poa_middleware, layer=0)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("PoA middleware injection skipped: %s", exc)
         contract = w3.eth.contract(address=Web3.to_checksum_address(addr), abi=_FILE_ACCESS_ABI)
         _cached = (w3, contract)
         return _cached
-    except Exception:
+    except Exception as exc:
+        logger.warning("Failed to initialize FileAccess contract: %s", exc)
         return None
 
 
@@ -78,7 +82,8 @@ def can_view(file_id: str, user: str) -> bool:
     _, contract = info
     try:
         return bool(contract.functions.canView(_to_bytes32(file_id), Web3.to_checksum_address(user)).call())
-    except Exception:
+    except Exception as exc:
+        logger.debug("canView call failed for file %s, user %s: %s", file_id, user, exc)
         return False
 
 
@@ -90,5 +95,6 @@ def get_role(file_id: str, user: str) -> int:
     _, contract = info
     try:
         return int(contract.functions.roleOf(_to_bytes32(file_id), Web3.to_checksum_address(user)).call())
-    except Exception:
+    except Exception as exc:
+        logger.debug("roleOf call failed for file %s, user %s: %s", file_id, user, exc)
         return -1

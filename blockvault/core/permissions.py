@@ -52,10 +52,11 @@ def _get_file_role(wallet: str, file_id: str) -> Optional[FileRole]:
     if not file_doc:
         # Try with string ID match on 'id' field
         from bson import ObjectId
+        from bson.errors import InvalidId
         try:
             file_doc = db["files"].find_one({"_id": ObjectId(file_id)})
-        except Exception:
-            pass
+        except (InvalidId, TypeError):
+            pass  # file_id is not a valid ObjectId format
 
     if file_doc:
         owner = (file_doc.get("owner") or "").lower()
@@ -120,10 +121,11 @@ def _get_workspace_for_file(file_id: str) -> Optional[str]:
     file_doc = db["files"].find_one({"_id": file_id})
     if not file_doc:
         from bson import ObjectId
+        from bson.errors import InvalidId
         try:
             file_doc = db["files"].find_one({"_id": ObjectId(file_id)})
-        except Exception:
-            pass
+        except (InvalidId, TypeError):
+            pass  # file_id is not a valid ObjectId format
     if file_doc:
         return file_doc.get("workspace_id")
     return None

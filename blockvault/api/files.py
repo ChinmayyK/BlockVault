@@ -210,10 +210,8 @@ def _lookup_file(file_id: str) -> Tuple[Dict[str, Any], str]:
         from bson import ObjectId
         from bson.errors import InvalidId
         candidates.append(ObjectId(file_id))
-    except InvalidId:
-        pass
-    except Exception:
-        pass
+    except (InvalidId, TypeError):
+        pass  # file_id is not a valid ObjectId format
     candidates.append(file_id)
 
     for candidate in candidates:
@@ -231,10 +229,8 @@ def _maybe_get_file(file_id: str) -> Optional[Dict[str, Any]]:
         from bson import ObjectId
         from bson.errors import InvalidId
         candidates.append(ObjectId(file_id))
-    except InvalidId:
-        pass
-    except Exception:
-        pass
+    except (InvalidId, TypeError):
+        pass  # file_id is not a valid ObjectId format
     candidates.append(file_id)
     for candidate in candidates:
         rec = coll.find_one({"_id": candidate})
@@ -796,10 +792,8 @@ def delete_file(file_id: str):  # type: ignore
         from bson import ObjectId
         from bson.errors import InvalidId
         oid = ObjectId(file_id)
-    except InvalidId:
-        pass
-    except Exception:
-        pass
+    except (InvalidId, TypeError):
+        pass  # file_id is not a valid ObjectId format
     coll = _files_collection()
     rec = coll.find_one({"_id": oid, "owner": owner})
     if not rec:

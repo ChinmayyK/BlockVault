@@ -6,7 +6,8 @@ Integrates pretrained models with Zero-Knowledge proofs for verifiable AI infere
 import os
 import json
 import hashlib
-import numpy as np
+import hmac
+import struct
 import torch
 from transformers import AutoTokenizer, BartForConditionalGeneration
 from typing import Dict, Any, List, Tuple
@@ -265,20 +266,27 @@ class ZKMLSummarizer:
         return commitment == expected
     
     def _generate_proof_point(self, commitment: str, suffix: str) -> List[str]:
-        """Generate mock proof point (replace with actual snarkjs)"""
-        # Use commitment as seed for deterministic "random" values
-        seed = int(commitment[:8], 16)
-        np.random.seed(seed)
-        
-        return [str(np.random.randint(1, 1000)) for _ in range(3)]
+        """Generate deterministic proof point using HMAC-SHA256."""
+        values = []
+        for i in range(3):
+            tag = f"{commitment}:{suffix}:{i}".encode()
+            h = hmac.new(commitment.encode(), tag, hashlib.sha256).digest()
+            val = struct.unpack('>I', h[:4])[0] % 999 + 1
+            values.append(str(val))
+        return values
     
     def _generate_proof_matrix(self, commitment: str, suffix: str) -> List[List[str]]:
-        """Generate mock proof matrix (replace with actual snarkjs)"""
-        # Use commitment as seed for deterministic "random" values
-        seed = int(commitment[:8], 16) + len(suffix)
-        np.random.seed(seed)
-        
-        return [[str(np.random.randint(1, 1000)) for _ in range(2)] for _ in range(3)]
+        """Generate deterministic proof matrix using HMAC-SHA256."""
+        matrix = []
+        for row in range(3):
+            row_vals = []
+            for col in range(2):
+                tag = f"{commitment}:{suffix}:{row}:{col}".encode()
+                h = hmac.new(commitment.encode(), tag, hashlib.sha256).digest()
+                val = struct.unpack('>I', h[:4])[0] % 999 + 1
+                row_vals.append(str(val))
+            matrix.append(row_vals)
+        return matrix
 
 
 # Global instance

@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import logging
 from flask import Blueprint, jsonify
 from ..core.security import require_auth
 from ..core.db import get_db
 from datetime import datetime
+
+logger = logging.getLogger(__name__)
 
 bp = Blueprint("blockchain", __name__)
 
@@ -39,8 +42,8 @@ def get_chain_of_custody():
                 return jsonify({"entries": entries})
             else:
                 return jsonify({"entries": []})
-        except Exception:
-            # If database query fails, return empty array
+        except Exception as exc:
+            logger.warning("chain-of-custody query failed: %s", exc)
             return jsonify({"entries": []})
     except Exception as e:
         return jsonify({"error": str(e), "entries": []}), 500
@@ -70,7 +73,8 @@ def get_document_chain(document_id: str):
                 return jsonify({"entries": entries})
             else:
                 return jsonify({"entries": []})
-        except Exception:
+        except Exception as exc:
+            logger.warning("document chain query failed: %s", exc)
             return jsonify({"entries": []})
     except Exception as e:
         return jsonify({"error": str(e), "entries": []}), 500
@@ -131,7 +135,8 @@ def verify_document(document_hash: str):
                     "message": "Document not found in blockchain records",
                     "transactions": []
                 })
-        except Exception:
+        except Exception as exc:
+            logger.warning("document verification query failed: %s", exc)
             return jsonify({
                 "verified": False,
                 "found": False,
@@ -181,7 +186,8 @@ def get_transactions():
                 return jsonify({"transactions": transactions})
             else:
                 return jsonify({"transactions": []})
-        except Exception:
+        except Exception as exc:
+            logger.warning("transactions query failed: %s", exc)
             return jsonify({"transactions": []})
     except Exception as e:
         return jsonify({"error": str(e), "transactions": []}), 500
@@ -296,8 +302,8 @@ def get_stats():
                         gas = tx.get("gasUsed") or tx.get("gas_used") or 0
                         if isinstance(gas, (int, float)):
                             gas_used += int(gas)
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("gas calculation skipped for tx: %s", exc)
             
             return jsonify({
                 "totalDocuments": total_documents,
@@ -306,8 +312,8 @@ def get_stats():
                 "gasUsed": gas_used,
                 "lastActivity": last_activity
             })
-        except Exception:
-            # Return empty stats if database query fails
+        except Exception as exc:
+            logger.warning("stats computation failed: %s", exc)
             return jsonify({
                 "totalDocuments": 0,
                 "totalTransactions": 0,

@@ -2,7 +2,6 @@ from __future__ import annotations
 from flask import Blueprint, request, abort, current_app
 import secrets
 import time
-import random
 from eth_account.messages import encode_defunct
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives import serialization

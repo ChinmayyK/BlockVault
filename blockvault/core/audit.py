@@ -55,8 +55,8 @@ def _get_last_hash() -> str:
         if last and "entry_hash" in last:
             _last_hash = last["entry_hash"]
             return _last_hash
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("Failed to retrieve last audit hash: %s", exc)
     # Genesis — no prior entries
     _last_hash = hashlib.sha256(b"GENESIS").hexdigest()
     return _last_hash

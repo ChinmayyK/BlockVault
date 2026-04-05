@@ -279,8 +279,8 @@ class RateLimiter:
             keys = self._client.keys(pattern)  # type: ignore[union-attr]
             if keys:
                 return self._client.delete(*keys)  # type: ignore[union-attr]
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("Rate limiter reset failed: %s", exc)
         return 0
 
 

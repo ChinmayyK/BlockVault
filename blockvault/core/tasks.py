@@ -201,7 +201,8 @@ def generate_redaction_proof_task(self: Any, file_id: str) -> Dict[str, Any]:
         if anchor_hash:
             try:
                 anchor_tx = onchain_mod.anchor_redaction_proof(anchor_hash)
-            except Exception:
+            except Exception as exc:
+                logger.warning("Redaction proof anchor failed (best-effort): %s", exc)
                 anchor_tx = None
 
         existing_proof = rec.get("redaction_proof") or {}
@@ -235,8 +236,8 @@ def generate_redaction_proof_task(self: Any, file_id: str) -> Dict[str, Any]:
         # Best-effort cleanup of inputs blob
         try:
             s3_mod.delete_blob(inputs_key)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("Best-effort cleanup of redaction inputs failed: %s", exc)
 
         try:
             from blockvault.core.audit import log_event
@@ -298,8 +299,8 @@ def batch_anchor(self: Any) -> Dict[str, Any]:
                 {"sha256": 1},
             )
             already_anchored = {r["sha256"] for r in existing}
-        except Exception:
-            pass  # collection may not exist yet
+        except Exception as exc:
+            logger.debug("Anchored hashes lookup skipped (collection may not exist): %s", exc)
 
         leaf_hashes = [h for h in leaf_hashes if h not in already_anchored]
         pending = [r for r in pending if r["sha256"] not in already_anchored]
@@ -357,8 +358,8 @@ def batch_anchor(self: Any) -> Dict[str, Any]:
                 [{"sha256": h, "merkle_root": merkle_root, "anchor_tx": anchor_tx} for h in leaf_hashes],
                 ordered=False,
             )
-        except Exception:
-            pass  # best effort — index will prevent exact duplicates
+        except Exception as exc:
+            logger.debug("Best-effort anchored hashes insert: %s", exc)
 
         logger.info(
             "batch_anchor: anchored %d files, root=%s, tx=%s",
@@ -424,10 +425,10 @@ def _find_record(coll: Any, file_id: str) -> Optional[Dict[str, Any]]:
         from bson import ObjectId
         from bson.errors import InvalidId
         candidates.append(ObjectId(file_id))
-    except InvalidId:
-        pass
-    except Exception:
-        pass
+    except (InvalidId, TypeError):
+        pass  # file_id is not a valid ObjectId format
+    except Exception as exc:
+        logger.debug("ObjectId conversion failed: %s", exc)
     candidates.append(file_id)
     for candidate in candidates:
         rec = coll.find_one({"_id": candidate})

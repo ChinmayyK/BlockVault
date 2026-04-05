@@ -11,6 +11,7 @@ import type { OrgMembership, WorkspaceMembership } from '@/types/roles';
 interface User {
   address: string;
   jwt?: string;
+  refreshToken?: string;
   user_id?: string;
   wallets?: string[];
   requires_wallet_link?: boolean;
@@ -34,6 +35,7 @@ interface AuthContextType {
   isAuthenticated: boolean;
   isMobile: boolean;
   setUser: (user: User | null) => void;
+  refreshAccessToken: () => Promise<string | null>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -473,12 +475,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       }
 
       const loginData = await loginResponse.json();
-      const { token, rsa_private_key, rsa_public_key, message, platform_role, role, organizations, workspaces, wrapped_vault_key } = loginData;
+      const { token, refresh_token, rsa_private_key, rsa_public_key, message, platform_role, role, organizations, workspaces, wrapped_vault_key } = loginData;
 
       // Update user with JWT and full role context
       const updatedUser = {
         ...user,
         jwt: token,
+        refreshToken: refresh_token,
         role: platform_role || role || 'USER',
         platform_role: platform_role || role || 'USER',
         organizations: organizations || [],
@@ -631,7 +634,22 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
-  const logout = () => {
+  const logout = async () => {
+    // Revoke refresh tokens server-side
+    if (user?.jwt && user?.refreshToken) {
+      try {
+        await fetch(buildApiUrl('/auth/revoke'), {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${user.jwt}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ refresh_token: user.refreshToken }),
+        });
+      } catch {
+        // Best-effort revocation
+      }
+    }
     if (user?.address) {
       const minimalUser = { address: user.address };
       setUser(minimalUser);
@@ -641,6 +659,33 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       clearStoredUser();
     }
     toast.success('Session cleared, wallet remains connected');
+  };
+
+  // Attempt to refresh the access token using the stored refresh token
+  const refreshAccessToken = async (): Promise<string | null> => {
+    const currentRefresh = user?.refreshToken;
+    if (!currentRefresh) return null;
+
+    try {
+      const res = await fetch(buildApiUrl('/auth/refresh'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refresh_token: currentRefresh }),
+      });
+
+      if (!res.ok) return null;
+
+      const { token, refresh_token } = await res.json();
+      setUser(prev => {
+        if (!prev) return null;
+        const updated = { ...prev, jwt: token, refreshToken: refresh_token };
+        writeStoredUser(updated);
+        return updated;
+      });
+      return token;
+    } catch {
+      return null;
+    }
   };
 
   const value: AuthContextType = {
@@ -656,6 +701,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     isAuthenticated,
     isMobile,
     setUser,
+    refreshAccessToken,
   };
 
   return (

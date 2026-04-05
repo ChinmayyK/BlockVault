@@ -22,6 +22,8 @@ import { saasService } from '@/api/services/saas.service';
 import type { AnalyticsSummary, StorageUsage, TeamActivity } from '@/types/saas';
 import { cn } from '@/lib/utils';
 import { Progress } from '@/components/ui/progress';
+import { useAuth } from '@/contexts/AuthContext';
+import { getApiBase } from '@/lib/getApiBase';
 
 export default function AnalyticsDashboard() {
   const [loading, setLoading] = useState(true);
@@ -30,22 +32,42 @@ export default function AnalyticsDashboard() {
   const [activity, setActivity] = useState<TeamActivity[]>([]);
   const [chartData, setChartData] = useState<{ date: string; documents: number }[]>([]);
 
+  const { user } = useAuth();
+  const API_BASE = getApiBase();
+  const [activeFilter, setActiveFilter] = useState<string>('');
+
+  // Fetch audit events from real backend
+  const fetchRecentActivity = async (typeFilter: string = '') => {
+    if (!user?.jwt) return;
+    try {
+      const params = new URLSearchParams({ limit: '15' });
+      if (typeFilter) params.set('types', typeFilter);
+      const res = await fetch(`${API_BASE}/audit/recent?${params}`, {
+        headers: { 'Authorization': `Bearer ${user.jwt}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setActivity(data.events || []);
+      }
+    } catch (err) {
+      console.warn('Failed to fetch live activity, using mock data');
+    }
+  };
+
   useEffect(() => {
     let mounted = true;
 
     async function fetchData() {
       try {
-        const [sum, stor, act, chart] = await Promise.all([
+        const [sum, stor, chart] = await Promise.all([
           saasService.getAnalyticsSummary(),
           saasService.getStorageUsage(),
-          saasService.getTeamActivity(),
           saasService.getDailyChartData(),
         ]);
 
         if (mounted) {
           setSummary(sum);
           setStorage(stor);
-          setActivity(act);
           setChartData(chart);
           setLoading(false);
         }
@@ -56,11 +78,16 @@ export default function AnalyticsDashboard() {
     }
 
     fetchData();
+    fetchRecentActivity(activeFilter);
+
+    // Auto-refresh activity every 30s
+    const interval = setInterval(() => fetchRecentActivity(activeFilter), 30000);
 
     return () => {
       mounted = false;
+      clearInterval(interval);
     };
-  }, []);
+  }, [user?.jwt, activeFilter]);
 
   if (loading) {
     return (
@@ -292,6 +319,33 @@ export default function AnalyticsDashboard() {
                 <h3 className="font-semibold">Team Activity</h3>
               </div>
               <Badge variant="secondary" className="font-normal text-xs">Live</Badge>
+            </div>
+            {/* Filter chips */}
+            <div className="px-5 py-2 border-b border-border/50 flex flex-wrap gap-1.5">
+              {[
+                { label: 'All', value: '' },
+                { label: 'Uploads', value: 'upload' },
+                { label: 'Downloads', value: 'download' },
+                { label: 'Shares', value: 'share_create' },
+                { label: 'Logins', value: 'login' },
+                { label: 'Redactions', value: 'redact' },
+              ].map(chip => (
+                <button
+                  key={chip.value}
+                  onClick={() => {
+                    setActiveFilter(chip.value);
+                    fetchRecentActivity(chip.value);
+                  }}
+                  className={cn(
+                    'px-2 py-0.5 rounded-full text-[10px] font-medium transition-colors',
+                    activeFilter === chip.value
+                      ? 'bg-primary/20 text-primary border border-primary/30'
+                      : 'bg-muted/30 text-muted-foreground hover:bg-muted/50 border border-transparent'
+                  )}
+                >
+                  {chip.label}
+                </button>
+              ))}
             </div>
             
             <div className="flex-1 p-5 overflow-y-auto">

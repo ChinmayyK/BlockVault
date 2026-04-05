@@ -100,6 +100,11 @@ def _get_bucket() -> str:
     return _bucket
 
 
+def head_bucket() -> None:
+    """Verify bucket is reachable (for health checks)."""
+    _client().head_bucket(Bucket=_get_bucket())
+
+
 # ---------------------------------------------------------------------------
 # Blob operations
 # ---------------------------------------------------------------------------

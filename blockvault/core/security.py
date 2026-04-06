@@ -46,7 +46,7 @@ def role_name(role: Role) -> str:
 
 def generate_jwt(payload: Dict[str, Any]) -> str:
     secret = current_app.config["JWT_SECRET"]
-    exp_minutes = current_app.config.get("JWT_EXP_MINUTES", 60)
+    exp_minutes = current_app.config.get("JWT_EXP_MINUTES", 15)
     now = int(time.time())
     to_encode = {"iat": now, "exp": now + exp_minutes * 60, **payload}
     return jwt.encode(to_encode, secret, algorithm="HS256")
@@ -55,6 +55,91 @@ def generate_jwt(payload: Dict[str, Any]) -> str:
 def verify_jwt(token: str) -> Dict[str, Any]:
     secret = current_app.config["JWT_SECRET"]
     return jwt.decode(token, secret, algorithms=["HS256"])  # type: ignore
+
+
+# ---------------------------------------------------------------------------
+# Refresh tokens
+# ---------------------------------------------------------------------------
+
+REFRESH_TOKEN_DAYS = 7
+
+
+def generate_refresh_token(address: str, device_fingerprint: str = "") -> str:
+    """Create a long-lived opaque refresh token stored in MongoDB."""
+    import secrets as _secrets
+    from .db import get_db
+
+    token = _secrets.token_urlsafe(48)
+    now = int(time.time())
+    expires_at = now + REFRESH_TOKEN_DAYS * 86400
+
+    get_db()["refresh_tokens"].insert_one({
+        "token_hash": _hash_token(token),
+        "address": address.lower(),
+        "device": device_fingerprint,
+        "created_at": now,
+        "expires_at": expires_at,
+        "revoked": False,
+    })
+    return token
+
+
+def verify_refresh_token(token: str) -> Dict[str, Any] | None:
+    """Validate a refresh token. Returns the token doc or None."""
+    from .db import get_db
+
+    token_hash = _hash_token(token)
+    doc = get_db()["refresh_tokens"].find_one({
+        "token_hash": token_hash,
+        "revoked": False,
+    })
+    if not doc:
+        return None
+    if int(time.time()) > doc.get("expires_at", 0):
+        return None
+    return doc
+
+
+def revoke_refresh_token(token: str) -> bool:
+    """Revoke a refresh token. Returns True if found and revoked."""
+    from .db import get_db
+
+    result = get_db()["refresh_tokens"].update_one(
+        {"token_hash": _hash_token(token)},
+        {"$set": {"revoked": True}},
+    )
+    return result.modified_count > 0
+
+
+def revoke_all_refresh_tokens(address: str) -> int:
+    """Revoke every refresh token for a user. Returns count revoked."""
+    from .db import get_db
+
+    result = get_db()["refresh_tokens"].update_many(
+        {"address": address.lower(), "revoked": False},
+        {"$set": {"revoked": True}},
+    )
+    return result.modified_count
+
+
+def rotate_refresh_token(old_token: str, device_fingerprint: str = "") -> tuple[str, str] | None:
+    """Rotate: revoke old token, issue new access + refresh token pair.
+
+    Returns (new_access_token, new_refresh_token) or None if invalid.
+    """
+    doc = verify_refresh_token(old_token)
+    if not doc:
+        return None
+    revoke_refresh_token(old_token)
+    address = doc["address"]
+    new_access = generate_jwt({"sub": address})
+    new_refresh = generate_refresh_token(address, device_fingerprint)
+    return new_access, new_refresh
+
+
+def _hash_token(token: str) -> str:
+    import hashlib
+    return hashlib.sha256(token.encode()).hexdigest()
 
 
 # ---------------------------------------------------------------------------

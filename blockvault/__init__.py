@@ -261,6 +261,9 @@ def create_app() -> Flask:
     from .api.cases import bp as cases_bp
     app.register_blueprint(cases_bp)
 
+    from .api.notifications import bp as notifications_bp
+    app.register_blueprint(notifications_bp)
+
     # -----------------------------------------------------------------
     # Utility / health endpoints
     # -----------------------------------------------------------------
@@ -318,15 +321,72 @@ def create_app() -> Flask:
 
     @app.get("/health")
     def health():
+        import time as _time
+        import socket
+
+        checks = {}
+        overall = "healthy"
+
+        # --- MongoDB ---
         try:
+            t0 = _time.monotonic()
             get_client().admin.command("ping")
-            resp = jsonify({"status": "ok"})
-            resp.headers['X-Route'] = 'health'
-            return resp
+            latency = round((_time.monotonic() - t0) * 1000, 1)
+            checks["mongodb"] = {"status": "ok", "latency_ms": latency}
         except Exception as exc:
-            resp = jsonify({"status": "error", "detail": str(exc)})
-            resp.headers['X-Route'] = 'health'
-            return resp, 503
+            checks["mongodb"] = {"status": "error", "error": str(exc)[:200]}
+            overall = "unhealthy"
+
+        # --- S3 / MinIO ---
+        try:
+            from .core import s3 as _s3
+            t0 = _time.monotonic()
+            _s3.head_bucket()
+            latency = round((_time.monotonic() - t0) * 1000, 1)
+            checks["s3"] = {"status": "ok", "latency_ms": latency}
+        except Exception as exc:
+            checks["s3"] = {"status": "error", "error": str(exc)[:200]}
+            if overall != "unhealthy":
+                overall = "degraded"
+
+        # --- Redis ---
+        try:
+            import redis as _redis_mod
+            redis_url = app.config.get("CELERY_BROKER_URL") or os.environ.get("CELERY_BROKER_URL", "")
+            if redis_url:
+                t0 = _time.monotonic()
+                rc = _redis_mod.from_url(redis_url, socket_connect_timeout=2)
+                rc.ping()
+                latency = round((_time.monotonic() - t0) * 1000, 1)
+                checks["redis"] = {"status": "ok", "latency_ms": latency}
+            else:
+                checks["redis"] = {"status": "not_configured"}
+        except Exception as exc:
+            checks["redis"] = {"status": "error", "error": str(exc)[:200]}
+            if overall != "unhealthy":
+                overall = "degraded"
+
+        # --- Crypto Daemon ---
+        crypto_addr = app.config.get("CRYPTO_DAEMON_ADDR") or os.environ.get("CRYPTO_DAEMON_ADDR", "")
+        if crypto_addr:
+            try:
+                host, port = crypto_addr.split(":")
+                t0 = _time.monotonic()
+                s = socket.create_connection((host, int(port)), timeout=2)
+                s.close()
+                latency = round((_time.monotonic() - t0) * 1000, 1)
+                checks["crypto_daemon"] = {"status": "ok", "latency_ms": latency}
+            except Exception as exc:
+                checks["crypto_daemon"] = {"status": "error", "error": str(exc)[:200]}
+                if overall != "unhealthy":
+                    overall = "degraded"
+        else:
+            checks["crypto_daemon"] = {"status": "not_configured"}
+
+        status_code = 200 if overall == "healthy" else (207 if overall == "degraded" else 503)
+        resp = jsonify({"status": overall, "checks": checks})
+        resp.headers['X-Route'] = 'health'
+        return resp, status_code
 
     @app.get("/")
     def index():

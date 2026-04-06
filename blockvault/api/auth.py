@@ -6,7 +6,11 @@ from eth_account.messages import encode_defunct
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives import serialization
 from ..core.db import get_db
-from ..core.security import generate_jwt, require_auth
+from ..core.security import (
+    generate_jwt, require_auth,
+    generate_refresh_token, rotate_refresh_token,
+    revoke_refresh_token, revoke_all_refresh_tokens,
+)
 
 def _normalize_address(addr: str) -> str:
     a = addr.strip()
@@ -213,6 +217,10 @@ def login():
     from ..core.audit import log_event
     log_event("login", details={"address": address})
 
+    # Issue refresh token (7-day, stored in MongoDB)
+    device = request.headers.get("User-Agent", "")[:200]
+    refresh_tok = generate_refresh_token(address, device_fingerprint=device)
+
     # Auto-create personal vault workspace on login
     try:
         from ..core.workspaces import WorkspaceStore
@@ -243,6 +251,7 @@ def login():
         "organizations": orgs,
         "workspaces": workspaces,
         "wrapped_vault_key": user_doc.get("wrapped_vault_key") if user_doc else None,
+        "refresh_token": refresh_tok,
     }
     
     # Return RSA keys to frontend for local storage (only on first generation or retrieval)
@@ -271,3 +280,42 @@ def me():  # type: ignore
         "role_value": int(role),
         "wrapped_vault_key": user_doc.get("wrapped_vault_key"),
     }
+
+
+@bp.post("/auth/refresh")
+def refresh_token_endpoint():
+    """Exchange a valid refresh token for a new access + refresh pair."""
+    data = request.get_json(silent=True) or {}
+    old_token = data.get("refresh_token")
+    if not old_token or not isinstance(old_token, str):
+        abort(400, "refresh_token required")
+
+    device = request.headers.get("User-Agent", "")[:200]
+    result = rotate_refresh_token(old_token, device_fingerprint=device)
+    if not result:
+        abort(401, "refresh token invalid or expired")
+
+    new_access, new_refresh = result
+    return {
+        "token": new_access,
+        "refresh_token": new_refresh,
+    }
+
+
+@bp.post("/auth/revoke")
+@require_auth
+def revoke_session():
+    """Revoke a specific refresh token or all tokens for the user."""
+    data = request.get_json(silent=True) or {}
+    address = getattr(request, "address")
+    token_to_revoke = data.get("refresh_token")
+
+    if token_to_revoke:
+        revoked = revoke_refresh_token(token_to_revoke)
+        return {"revoked": revoked}
+
+    # No token specified → revoke all
+    count = revoke_all_refresh_tokens(address)
+    from ..core.audit import log_event
+    log_event("revoke_all_sessions", details={"address": address, "count": count})
+    return {"revoked_count": count}

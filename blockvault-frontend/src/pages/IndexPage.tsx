@@ -255,7 +255,7 @@ const IndexPage = () => {
                     <Wallet className="h-5 w-5" />
                     Connect Wallet
                   </Button>
-                  <a href="https://github.com/ChinmayyK/BlockVault" target="_blank" rel="noopener noreferrer" className="w-full sm:w-auto">
+                  <a href="https://github.com/chinmayyk/BlockVault" target="_blank" rel="noopener noreferrer" className="w-full sm:w-auto">
                     <Button size="lg" variant="ghost" className="h-14 px-6 text-lg w-full">
                       <Github className="h-5 w-5 mr-2" />
                       GitHub

@@ -678,6 +678,60 @@ def fetch_file_content(file_id: str):  # type: ignore
     return resp
 
 
+@bp.get("/search", strict_slashes=False)
+@require_auth
+def search_files():
+    ensure_role(Role.USER)
+    term = request.args.get("q", "").strip()
+    try:
+        limit = min(int(request.args.get("limit", 20)), 50)
+    except ValueError:
+        limit = 20
+        
+    if len(term) < 2:
+        return {"files": []}
+        
+    owner = getattr(request, "address").lower()
+    coll = _files_collection()
+    
+    try:
+        from ..core.workspaces import WorkspaceStore
+        ws_store = WorkspaceStore()
+        user_workspaces = [w["workspace_id"] for w in ws_store.get_user_workspaces(owner)]
+        
+        flt = {
+            "$text": {"$search": term},
+            "$or": [
+                {"owner": owner},
+                {"workspace_id": {"$in": user_workspaces}}
+            ]
+        }
+        
+        cursor = coll.find(flt, {"score": {"$meta": "textScore"}}).sort([("score", {"$meta": "textScore"})]).limit(limit)
+        items = []
+        for doc in cursor:
+            items.append({
+                "file_id": str(doc.get("_id")),
+                "name": doc.get("original_name"),
+                "size": doc.get("size"),
+                "created_at": doc.get("created_at"),
+                "aad": doc.get("aad"),
+                "sha256": doc.get("sha256"),
+                "cid": doc.get("cid"),
+                "anchor_tx": doc.get("anchor_tx"),
+                "gateway_url": ipfs_mod.gateway_url(doc.get("cid")) if doc.get("cid") else None,
+                "folder": doc.get("folder"),
+                "workspace_id": doc.get("workspace_id"),
+                "redaction_status": doc.get("redaction_status"),
+                "redacted_from": doc.get("redacted_from"),
+                "search_score": doc.get("score"),
+            })
+        return {"files": items}
+    except Exception as e:
+        current_app.logger.error("Search failed: %s", e)
+        abort(500, f"Search failed: {e}")
+
+
 @bp.get("/", strict_slashes=False)
 @require_auth
 def list_files():  # type: ignore

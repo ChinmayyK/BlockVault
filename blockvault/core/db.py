@@ -69,6 +69,12 @@ def _ensure_indexes(db: Database) -> None:
             background=True,
         )
         db["files"].create_index("sha256", name="idx_files_sha256", background=True)
+        # Global search text index
+        db["files"].create_index(
+            [("original_name", "text"), ("tags", "text")],
+            name="idx_files_text",
+            background=True,
+        )
         db["shares"].create_index("recipient", name="idx_shares_recipient", background=True)
         db["shares"].create_index("file_id", name="idx_shares_file_id", background=True)
         db["audit_events"].create_index(

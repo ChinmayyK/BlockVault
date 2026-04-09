@@ -104,7 +104,19 @@ apiClient.interceptors.response.use(
     }
     if (!error.response) {
       const now = Date.now();
-      if (!error.config?.skipNetworkToast && now - lastNetworkToastAt > NETWORK_TOAST_COOLDOWN_MS) {
+      // Only show network toast to authenticated users who are not on the landing page.
+      // Unauthenticated visitors (e.g. landing page) should never see backend errors.
+      let hasSession = false;
+      try {
+        const stored = localStorage.getItem(AUTH_STORAGE_KEY);
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          hasSession = !!parsed?.jwt;
+        }
+      } catch (_) {}
+      const isLandingPage = typeof window !== 'undefined' && (window.location.pathname === '/' || window.location.pathname === '/learn-more');
+
+      if (!error.config?.skipNetworkToast && hasSession && !isLandingPage && now - lastNetworkToastAt > NETWORK_TOAST_COOLDOWN_MS) {
         toast.error('Network error. Please check your connection and try again.');
         lastNetworkToastAt = now;
       }

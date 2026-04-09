@@ -1,42 +1,71 @@
-import React from 'react';
-import { Building2, Plus, Users, FolderOpen, ArrowRight } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Building2, Plus, Users, FolderOpen, ArrowRight, Loader2 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { formatDistanceToNow } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
 import { CreateOrganizationModal } from '@/components/workspaces/CreateOrganizationModal';
+import { useAuth } from '@/contexts/AuthContext';
+import { getApiBase } from '@/lib/getApiBase';
 import toast from 'react-hot-toast';
 
-// Dummy data
-const ORGANIZATIONS = [
-  {
-    id: 'org-1',
-    name: 'Acme Legal',
-    role: 'Owner',
-    members: 12,
-    workspaces: 4,
-    createdAt: new Date(Date.now() - 1000 * 60 * 60 * 24 * 45).toISOString(),
-    color: 'from-blue-500 to-indigo-500'
-  },
-  {
-    id: 'org-2',
-    name: 'Research Team Alpha',
-    role: 'Admin',
-    members: 5,
-    workspaces: 2,
-    createdAt: new Date(Date.now() - 1000 * 60 * 60 * 24 * 12).toISOString(),
-    color: 'from-emerald-500 to-teal-500'
-  }
+const ORG_COLORS = [
+  'from-blue-500 to-indigo-500',
+  'from-emerald-500 to-teal-500',
+  'from-purple-500 to-pink-500',
+  'from-amber-500 to-orange-500',
+  'from-cyan-500 to-blue-500',
+  'from-rose-500 to-red-500',
 ];
 
 export default function Organizations() {
   const navigate = useNavigate();
-  const [organizations, setOrganizations] = React.useState(ORGANIZATIONS);
-  const [isCreateModalOpen, setIsCreateModalOpen] = React.useState(false);
+  const { user } = useAuth();
+  const [organizations, setOrganizations] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const API_BASE = getApiBase();
+
+  useEffect(() => {
+    if (!user?.jwt) return;
+    const fetchOrgs = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/organizations`, {
+          headers: { Authorization: `Bearer ${user.jwt}` },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          const orgs = (data.organizations || []).map((org: any, i: number) => ({
+            id: org.org_id || org._id,
+            name: org.name,
+            role: org.role || 'Member',
+            members: org.member_count ?? 0,
+            workspaces: org.workspace_count ?? 0,
+            createdAt: org.created_at ? new Date(org.created_at * 1000).toISOString() : new Date().toISOString(),
+            color: ORG_COLORS[i % ORG_COLORS.length],
+          }));
+          setOrganizations(orgs);
+        }
+      } catch (err) {
+        console.error('Failed to fetch organizations:', err);
+        toast.error('Failed to load organizations');
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchOrgs();
+  }, [user?.jwt]);
 
   const handleOrgCreated = (newOrg: any) => {
-    // Add to local state (mock)
-    setOrganizations(prev => [newOrg, ...prev]);
+    setOrganizations(prev => [{
+      id: newOrg.org_id || newOrg._id,
+      name: newOrg.name,
+      role: 'Owner',
+      members: 1,
+      workspaces: 0,
+      createdAt: new Date().toISOString(),
+      color: ORG_COLORS[prev.length % ORG_COLORS.length],
+    }, ...prev]);
   };
 
   return (
@@ -61,6 +90,23 @@ export default function Organizations() {
         </Button>
       </div>
 
+      {loading ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {[1, 2, 3].map(i => (
+            <Card key={i} className="overflow-hidden border-border animate-pulse">
+              <div className="h-2 w-full bg-muted" />
+              <div className="p-6 space-y-4">
+                <div className="h-6 bg-muted rounded w-2/3" />
+                <div className="h-4 bg-muted rounded w-1/3" />
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="h-16 bg-muted rounded" />
+                  <div className="h-16 bg-muted rounded" />
+                </div>
+              </div>
+            </Card>
+          ))}
+        </div>
+      ) : (
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {organizations.map((org) => (
           <Card 
@@ -134,6 +180,7 @@ export default function Organizations() {
           </p>
         </Card>
       </div>
+      )}
 
       {isCreateModalOpen && (
         <CreateOrganizationModal 

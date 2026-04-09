@@ -79,6 +79,7 @@ def get_recent_activity():
         limit = min(int(request.args.get("limit", 20)), 100)
         types_param = request.args.get("types", "")
         before = request.args.get("before")
+        workspace_id = request.args.get("workspace_id")
 
         query: dict = {}
         if types_param:
@@ -88,6 +89,9 @@ def get_recent_activity():
 
         if before:
             query["timestamp"] = {"$lt": int(before)}
+            
+        if workspace_id:
+            query["details.workspace_id"] = workspace_id
 
         events = list(
             coll.find(query)

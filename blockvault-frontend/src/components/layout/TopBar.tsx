@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/contexts/AuthContext";
 import { WorkspaceSwitcher } from "@/components/workspaces/WorkspaceSwitcher";
 import { NotificationBell } from "@/components/layout/NotificationBell";
+import { GlobalSearch } from "@/components/layout/GlobalSearch";
 
 export function TopBar() {
   const { user, isAuthenticated } = useAuth();
@@ -18,14 +19,7 @@ export function TopBar() {
         {/* Search */}
         <div className="flex-1 max-w-xl flex items-center gap-4">
           <WorkspaceSwitcher />
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              type="search"
-              placeholder="Search documents..."
-              className="pl-10 bg-input border-border"
-            />
-          </div>
+          <GlobalSearch />
         </div>
 
         {/* Right side actions */}

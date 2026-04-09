@@ -12,6 +12,8 @@ import { Progress } from "@/components/ui/progress";
 import { FileUpload } from "@/components/file/FileUpload";
 import { ReviewPanel } from "@/components/redact/ReviewPanel";
 import { FileDetailsPanel } from "@/components/file/FileDetailsPanel";
+import { useTheme } from "@/contexts/ThemeContext";
+import IndexPageLight from "./IndexPageLight";
 
 const typewriterPhrases = [
   { text: "Detect Sensitive Data Automatically", highlight: "Sensitive Data" },
@@ -125,6 +127,7 @@ const TypewriterHeadline = () => {
 
 const IndexPage = () => {
   const navigate = useNavigate();
+  const { theme } = useTheme();
   const { isAuthenticated, isMobile, connectWallet, login, loading } = useAuth();
   const [showMobileWallet, setShowMobileWallet] = useState(false);
 
@@ -210,6 +213,10 @@ const IndexPage = () => {
       compliance_profile: "SOC2 (Strict)"
     }
   };
+
+  if (theme === 'light') {
+    return <IndexPageLight />;
+  }
 
   return (
     <div className="min-h-screen bg-background">

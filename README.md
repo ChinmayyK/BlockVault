@@ -15,6 +15,8 @@
 
 > **Enterprise-grade decentralized file storage with zero-knowledge proofs and blockchain verification**
 
+[![CI](https://github.com/ChinmayyK/BlockVault/actions/workflows/ci.yml/badge.svg)](https://github.com/ChinmayyK/BlockVault/actions/workflows/ci.yml)
+
 ---
 
 <div align="center">

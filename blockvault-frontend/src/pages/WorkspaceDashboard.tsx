@@ -11,6 +11,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { getApiBase } from '@/lib/getApiBase';
 import { useFiles } from '@/contexts/FileContext';
 import toast from 'react-hot-toast';
+import { formatDistanceToNow } from 'date-fns';
 
 export default function WorkspaceDashboard() {
   const { id } = useParams();
@@ -23,6 +24,7 @@ export default function WorkspaceDashboard() {
   const [activeTab, setActiveTab] = useState('files');
   const [files, setFiles] = useState<any[]>([]);
   const [members, setMembers] = useState<any[]>([]);
+  const [activities, setActivities] = useState<any[]>([]);
   const [filesLoading, setFilesLoading] = useState(false);
 
   // Set the active workspace whenever the ID changes
@@ -64,6 +66,30 @@ export default function WorkspaceDashboard() {
     };
 
     fetchWorkspaceData();
+  }, [activeWorkspace, user?.jwt]);
+
+  // Fetch workspace audit activities
+  useEffect(() => {
+    if (!activeWorkspace || !user?.jwt) return;
+
+    const fetchActivities = async () => {
+      try {
+        const res = await fetch(`${getApiBase()}/audit/recent?workspace_id=${activeWorkspace.workspace_id}&limit=20`, {
+          headers: { 'Authorization': `Bearer ${user.jwt}` }
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setActivities(data.events || []);
+        }
+      } catch (err) {
+        console.error('Failed to fetch workspace activities:', err);
+      }
+    };
+
+    fetchActivities();
+    const interval = setInterval(fetchActivities, 30000); // 30s refresh
+
+    return () => clearInterval(interval);
   }, [activeWorkspace, user?.jwt]);
 
   const currentUserRole = activeWorkspace?.role || 'VIEWER';
@@ -210,20 +236,25 @@ export default function WorkspaceDashboard() {
         <TabsContent value="activity" className="mt-6">
            <Card variant="premium" className="p-6">
               <div className="space-y-6">
-                 {[1, 2, 3].map((i) => (
-                    <div key={i} className="flex gap-4">
+                 {activities.length === 0 ? (
+                    <div className="text-center text-muted-foreground py-8">No recent activity found.</div>
+                 ) : (
+                 activities.map((activity, idx) => (
+                    <div key={activity.id} className="flex gap-4">
                        <div className="relative mt-1">
                           <div className="w-2.5 h-2.5 rounded-full bg-primary ring-4 ring-primary/20 z-10 relative" />
-                          {i !== 3 && <div className="absolute top-4 left-1/2 -ml-[1px] w-[2px] h-12 bg-border z-0" />}
+                          {idx !== activities.length - 1 && <div className="absolute top-4 left-1/2 -ml-[1px] w-[2px] h-full bg-border z-0" />}
                        </div>
                        <div>
                           <p className="text-sm">
-                            <span className="font-semibold text-foreground">Alice Lawyer</span> viewed document <span className="font-mono text-primary bg-primary/10 px-1 py-0.5 rounded">Discovery_Notes_V2.pdf</span>
+                            <span className="font-semibold text-foreground">{activity.user_name}</span> {activity.action.replace('_', ' ')} <span className="font-mono text-primary bg-primary/10 px-1 py-0.5 rounded">{activity.target}</span>
                           </p>
-                          <p className="text-xs text-muted-foreground mt-1">2 hours ago</p>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            {formatDistanceToNow(new Date(activity.timestamp))} ago
+                          </p>
                        </div>
                     </div>
-                 ))}
+                 )))}
               </div>
            </Card>
         </TabsContent>

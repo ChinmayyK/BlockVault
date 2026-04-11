@@ -9,6 +9,7 @@ import logging
 from flask import Blueprint, request, abort, jsonify
 
 from ..core.security import require_auth
+from ..core.validation import sanitize_id
 from ..core.notifications import (
     get_notifications,
     mark_read,
@@ -48,6 +49,7 @@ def list_notifications():
 @require_auth
 def mark_notification_read(notification_id: str):
     """Mark a single notification as read."""
+    notification_id = sanitize_id(notification_id, "notification_id")
     address = getattr(request, "address")
     ok = mark_read(address, notification_id)
     if not ok:

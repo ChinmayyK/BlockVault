@@ -22,7 +22,11 @@ try:
 except ImportError:  # backend may not have web3 installed yet
     Web3 = None  # type: ignore
 
-FILE_REGISTRY_ABI = [
+# ---------------------------------------------------------------------------
+# ABI loading — prefer exported JSON from Hardhat, fall back to minimal ABI
+# ---------------------------------------------------------------------------
+
+_MINIMAL_ABI = [
     {
         "inputs": [
             {"internalType": "bytes32", "name": "fileHash", "type": "bytes32"},
@@ -45,6 +49,25 @@ FILE_REGISTRY_ABI = [
         "type": "function",
     },
 ]
+
+_ABI_DIR = os.path.join(os.path.dirname(__file__), "abi")
+
+
+def _load_abi(contract_name: str) -> list:
+    """Load ABI from exported JSON, falling back to the minimal hardcoded ABI."""
+    abi_path = os.path.join(_ABI_DIR, f"{contract_name}.json")
+    if os.path.isfile(abi_path):
+        try:
+            with open(abi_path, "r") as f:
+                abi = json.load(f)
+            logger.debug("Loaded ABI from %s (%d entries)", abi_path, len(abi))
+            return abi
+        except Exception as exc:
+            logger.warning("Failed to load ABI from %s: %s — using minimal ABI", abi_path, exc)
+    return _MINIMAL_ABI
+
+
+FILE_REGISTRY_ABI = _load_abi("FileRegistry")
 
 
 def enabled() -> bool:

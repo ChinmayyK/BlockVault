@@ -45,16 +45,42 @@ def role_name(role: Role) -> str:
 # ---------------------------------------------------------------------------
 
 def generate_jwt(payload: Dict[str, Any]) -> str:
-    secret = current_app.config["JWT_SECRET"]
+    """Generate a JWT with the active signing key.
+
+    Includes a ``kid`` (Key ID) header to support key rotation.
+    Falls back to the static JWT_SECRET if the key store is unavailable.
+    """
+    try:
+        from .jwt_keys import get_active_key
+        kid, secret = get_active_key()
+    except Exception:
+        kid = None
+        secret = current_app.config["JWT_SECRET"]
+
     exp_minutes = current_app.config.get("JWT_EXP_MINUTES", 15)
     now = int(time.time())
     to_encode = {"iat": now, "exp": now + exp_minutes * 60, **payload}
-    return jwt.encode(to_encode, secret, algorithm="HS256")
+
+    headers: Dict[str, Any] = {}
+    if kid:
+        headers["kid"] = kid
+
+    return jwt.encode(to_encode, secret, algorithm="HS256", headers=headers or None)
 
 
 def verify_jwt(token: str) -> Dict[str, Any]:
-    secret = current_app.config["JWT_SECRET"]
-    return jwt.decode(token, secret, algorithms=["HS256"])  # type: ignore
+    """Verify a JWT token.
+
+    Tries multi-key verification (active + grace period keys) first.
+    Falls back to the static JWT_SECRET for legacy tokens.
+    """
+    try:
+        from .jwt_keys import verify_with_any_valid_key
+        return verify_with_any_valid_key(token)
+    except Exception:
+        # Fallback to static secret for backward compatibility
+        secret = current_app.config["JWT_SECRET"]
+        return jwt.decode(token, secret, algorithms=["HS256"])  # type: ignore
 
 
 # ---------------------------------------------------------------------------

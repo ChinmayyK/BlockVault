@@ -186,7 +186,21 @@ def create_app() -> Flask:
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-        response.headers["Content-Security-Policy"] = "default-src 'self'; frame-ancestors 'none'"
+        # CSP: allow connect-src for CORS API origins and SPA inline styles
+        csp_connect = "'self'"
+        cors_origins = app.config.get("CORS_ALLOWED_ORIGINS", "")
+        if cors_origins and cors_origins.strip() not in {"*", ""}:
+            extra = " ".join(o.strip() for o in cors_origins.split(",") if o.strip())
+            csp_connect = f"'self' {extra}"
+        csp = (
+            f"default-src 'self'; "
+            f"script-src 'self'; "
+            f"style-src 'self' 'unsafe-inline'; "
+            f"connect-src {csp_connect}; "
+            f"img-src 'self' data: blob:; "
+            f"frame-ancestors 'none'"
+        )
+        response.headers["Content-Security-Policy"] = csp
         if not app.debug:
             response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
         return response
@@ -194,11 +208,17 @@ def create_app() -> Flask:
     # -----------------------------------------------------------------
     # Rate limiting (Flask-Limiter)
     # -----------------------------------------------------------------
+    # Prefer dedicated RATELIMIT_STORAGE_URI, fall back to Celery broker (Redis),
+    # then in-memory (note: memory:// loses state on restart and per-worker).
+    ratelimit_uri = os.environ.get(
+        "RATELIMIT_STORAGE_URI",
+        os.environ.get("CELERY_BROKER_URL", "memory://"),
+    )
     limiter = Limiter(
         key_func=_rate_limit_key,
         app=app,
         default_limits=["200/minute"],
-        storage_uri=os.environ.get("CELERY_BROKER_URL", "memory://"),
+        storage_uri=ratelimit_uri,
     )
 
     # Auth endpoints: strict 5/min
@@ -263,6 +283,9 @@ def create_app() -> Flask:
 
     from .api.notifications import bp as notifications_bp
     app.register_blueprint(notifications_bp)
+
+    from .api.versions import bp as versions_bp
+    app.register_blueprint(versions_bp)
 
     # -----------------------------------------------------------------
     # Utility / health endpoints
@@ -495,5 +518,25 @@ def create_app() -> Flask:
         from .core.security import generate_jwt
         token = generate_jwt({"sub": address})
         return {"token": token, "address": address}
+
+    # -----------------------------------------------------------------------
+    # Real-time WebSocket initialization
+    # -----------------------------------------------------------------------
+    try:
+        from .core.realtime import init_socketio
+        socketio = init_socketio(app)
+        if socketio:
+            app.extensions["socketio"] = socketio
+    except Exception as exc:
+        app.logger.warning("SocketIO initialization skipped: %s", exc)
+
+    # -----------------------------------------------------------------------
+    # Production observability (Prometheus metrics + Sentry)
+    # -----------------------------------------------------------------------
+    try:
+        from .core.metrics import init_observability
+        init_observability(app)
+    except Exception as exc:
+        app.logger.warning("Observability initialization skipped: %%s", exc)
 
     return app

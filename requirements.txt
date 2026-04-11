@@ -96,3 +96,9 @@ Pillow>=10.0.0
 # Production Server (for deployment)
 gunicorn==21.2.0
 gevent==23.9.1
+
+# Real-Time WebSocket Support
+flask-socketio>=5.3.0
+
+# Production Observability
+sentry-sdk[flask]>=1.40.0

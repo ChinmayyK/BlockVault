@@ -5,6 +5,7 @@ import uuid
 from flask import Blueprint, request, abort
 
 from ..core.security import require_auth
+from ..core.validation import sanitize_id, sanitize_wallet, reject_nosql_operators
 from ..core.organizations import OrganizationStore
 from ..core.roles import OrgRole, org_role_gte
 
@@ -52,6 +53,7 @@ def list_my_organizations():
 @require_auth
 def get_organization(org_id: str):
     """Get organization details (must be a member)."""
+    org_id = sanitize_id(org_id, "org_id")
     address = getattr(request, "address")
     store = _store()
 
@@ -79,6 +81,7 @@ def get_organization(org_id: str):
 @require_auth
 def add_member(org_id: str):
     """Add a member to the organization. Requires ORG_ADMIN+."""
+    org_id = sanitize_id(org_id, "org_id")
     address = getattr(request, "address")
     store = _store()
 
@@ -111,6 +114,8 @@ def add_member(org_id: str):
 @require_auth
 def update_member_role(org_id: str, wallet: str):
     """Update a member's role. Requires ORG_ADMIN+."""
+    org_id = sanitize_id(org_id, "org_id")
+    wallet = sanitize_wallet(wallet, "wallet")
     address = getattr(request, "address")
     store = _store()
 
@@ -136,6 +141,8 @@ def update_member_role(org_id: str, wallet: str):
 @require_auth
 def remove_member(org_id: str, wallet: str):
     """Remove a member from the organization. Requires ORG_ADMIN+."""
+    org_id = sanitize_id(org_id, "org_id")
+    wallet = sanitize_wallet(wallet, "wallet")
     address = getattr(request, "address")
     store = _store()
 

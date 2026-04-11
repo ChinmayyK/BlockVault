@@ -1,10 +1,10 @@
-"""Workspace API endpoints."""
 from __future__ import annotations
 
 import uuid
 from flask import Blueprint, request, abort
 
 from ..core.security import require_auth
+from ..core.validation import sanitize_id, sanitize_str, sanitize_wallet, reject_nosql_operators
 from ..core.workspaces import WorkspaceStore
 from ..core.roles import WorkspaceRole, ws_role_gte
 
@@ -63,6 +63,7 @@ def create_workspace():
 @require_auth
 def get_workspace(workspace_id: str):
     """Get workspace details (must be a member)."""
+    workspace_id = sanitize_id(workspace_id, "workspace_id")
     address = getattr(request, "address")
     store = _store()
 
@@ -90,6 +91,7 @@ def get_workspace(workspace_id: str):
 @require_auth
 def add_member(workspace_id: str):
     """Add a member to a workspace. Requires WORKSPACE_OWNER."""
+    workspace_id = sanitize_id(workspace_id, "workspace_id")
     address = getattr(request, "address")
     store = _store()
 
@@ -121,6 +123,8 @@ def add_member(workspace_id: str):
 @require_auth
 def update_member_role(workspace_id: str, wallet: str):
     """Update a member's role. Requires WORKSPACE_OWNER."""
+    workspace_id = sanitize_id(workspace_id, "workspace_id")
+    wallet = sanitize_wallet(wallet, "wallet")
     address = getattr(request, "address")
     store = _store()
 

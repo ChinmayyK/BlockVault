@@ -10,6 +10,7 @@ from flask import Blueprint, request, abort, jsonify
 
 from ..core.security import require_auth
 from ..core.audit import log_event
+from ..core.validation import sanitize_id, sanitize_str, reject_nosql_operators
 from ..core import cases as case_store
 
 logger = logging.getLogger(__name__)
@@ -63,6 +64,7 @@ def create_case():
 @require_auth
 def get_case(case_id: str):
     """Get a specific case by ID."""
+    case_id = sanitize_id(case_id, "case_id")
     owner = getattr(request, "address", "").lower()
     case = case_store.get_case(case_id, owner)
     if not case:
@@ -74,8 +76,10 @@ def get_case(case_id: str):
 @require_auth
 def update_case(case_id: str):
     """Update a case."""
+    case_id = sanitize_id(case_id, "case_id")
     owner = getattr(request, "address", "").lower()
     data = request.get_json(silent=True) or {}
+    reject_nosql_operators(data)
     updated = case_store.update_case(case_id, owner, data)
     if not updated:
         abort(404, "Case not found")
@@ -87,6 +91,7 @@ def update_case(case_id: str):
 @require_auth
 def delete_case(case_id: str):
     """Delete a case."""
+    case_id = sanitize_id(case_id, "case_id")
     owner = getattr(request, "address", "").lower()
     if not case_store.delete_case(case_id, owner):
         abort(404, "Case not found")
@@ -102,6 +107,7 @@ def delete_case(case_id: str):
 @require_auth
 def get_dashboard(case_id: str):
     """Get dashboard overview for a case."""
+    case_id = sanitize_id(case_id, "case_id")
     owner = getattr(request, "address", "").lower()
     dashboard = case_store.get_case_dashboard(case_id, owner)
     if not dashboard:
@@ -117,6 +123,7 @@ def get_dashboard(case_id: str):
 @require_auth
 def get_tasks(case_id: str):
     """Get tasks for a case."""
+    case_id = sanitize_id(case_id, "case_id")
     owner = getattr(request, "address", "").lower()
     tasks = case_store.get_tasks(case_id, owner)
     if tasks is None:
@@ -128,8 +135,10 @@ def get_tasks(case_id: str):
 @require_auth
 def create_task(case_id: str):
     """Create a task on a case."""
+    case_id = sanitize_id(case_id, "case_id")
     owner = getattr(request, "address", "").lower()
     data = request.get_json(silent=True) or {}
+    reject_nosql_operators(data)
     task = case_store.add_task(case_id, owner, data)
     if not task:
         abort(404, "Case not found or access denied")
@@ -145,8 +154,10 @@ def create_task(case_id: str):
 @require_auth
 def add_team_member(case_id: str):
     """Add a team member to a case."""
+    case_id = sanitize_id(case_id, "case_id")
     owner = getattr(request, "address", "").lower()
     data = request.get_json(silent=True) or {}
+    reject_nosql_operators(data)
     member = case_store.add_team_member(case_id, owner, data)
     if not member:
         abort(404, "Case not found or access denied")
@@ -200,8 +211,10 @@ def get_audit_trail(case_id: str):
 @require_auth
 def request_signature(document_id: str):
     """Request e-signatures on a document."""
+    document_id = sanitize_id(document_id, "document_id")
     user = getattr(request, "address", "").lower()
     data = request.get_json(silent=True) or {}
+    reject_nosql_operators(data)
     sig_req = case_store.create_signature_request(document_id, user, data)
     log_event("signature_requested", target_id=document_id, details={
         "request_id": sig_req["id"],
@@ -214,8 +227,10 @@ def request_signature(document_id: str):
 @require_auth
 def sign_document(document_id: str):
     """Sign a document."""
+    document_id = sanitize_id(document_id, "document_id")
     user = getattr(request, "address", "").lower()
     data = request.get_json(silent=True) or {}
+    reject_nosql_operators(data)
     sig = case_store.sign_document(
         document_id,
         signer_address=data.get("signerAddress", user),
@@ -250,7 +265,9 @@ def get_signature_requests_sent():
 @require_auth
 def update_signature_status(request_id: str):
     """Update signature request status (signed/declined)."""
+    request_id = sanitize_id(request_id, "request_id")
     data = request.get_json(silent=True) or {}
+    reject_nosql_operators(data)
     status = data.get("status")
     signer = data.get("signer", "")
     updated = case_store.update_signature_request_status(request_id, status, signer)
@@ -310,11 +327,14 @@ def get_case_documents(case_id: str):
 @require_auth
 def add_document_to_case(case_id: str):
     """Link an existing file to a case."""
+    case_id = sanitize_id(case_id, "case_id")
     owner = getattr(request, "address", "").lower()
     data = request.get_json(silent=True) or {}
+    reject_nosql_operators(data)
     file_id = data.get("fileId") or data.get("id")
     if not file_id:
         abort(400, "fileId required")
+    file_id = sanitize_id(file_id, "fileId")
 
     from ..core.db import get_db
     result = get_db()["cases"].find_one_and_update(

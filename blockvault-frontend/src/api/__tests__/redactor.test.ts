@@ -1,12 +1,13 @@
+import { describe, test, expect, afterEach, vi } from 'vitest';
 import { analyzeRedaction, applyRedaction, verifyRedaction } from '../redactor';
 import apiClient from '@/api/client';
 
-jest.mock('@/api/client');
-const mockedApiClient = apiClient as jest.Mocked<typeof apiClient>;
+vi.mock('@/api/client');
+const mockedApiClient = apiClient as any;
 
 describe('Redactor API', () => {
     afterEach(() => {
-        jest.clearAllMocks();
+        vi.clearAllMocks();
     });
 
     const fileId = 'file-123';
@@ -48,7 +49,8 @@ describe('Redactor API', () => {
         const result = await verifyRedaction(fileId);
 
         expect(mockedApiClient.get).toHaveBeenCalledWith(
-            expect.stringContaining(`/files/${fileId}/verify-redaction`)
+            expect.stringContaining(`/files/${fileId}/verify-redaction`),
+            expect.anything()
         );
         expect(result).toEqual(mockResponse.data);
     });

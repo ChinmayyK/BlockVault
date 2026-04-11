@@ -15,10 +15,10 @@ jobs:
         ports:
           - 27017:27017
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
 
     - name: Set up Python 3.10
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: "3.10"
         cache: 'pip'
@@ -40,15 +40,33 @@ jobs:
       run: |
         pytest tests/ -v
 
+  security-scan:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python 3.10
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.10"
+
+    - name: Install Bandit
+      run: pip install bandit
+
+    - name: Run Bandit security scan
+      run: |
+        bandit -r blockvault/ -f json -o bandit_ci_report.json --exit-zero
+        bandit -r blockvault/ -ll --exit-zero
+
   frontend-build:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
 
-    - name: Use Node.js 18.x
-      uses: actions/setup-node@v3
+    - name: Use Node.js 20.x
+      uses: actions/setup-node@v4
       with:
-        node-version: 18
+        node-version: 20
         cache: 'npm'
         cache-dependency-path: 'blockvault-frontend/package-lock.json'
 
@@ -60,6 +78,34 @@ jobs:
       working-directory: ./blockvault-frontend
       run: npx tsc --noEmit
 
+    - name: Run Tests
+      working-directory: ./blockvault-frontend
+      run: npx vitest run
+
     - name: Build
       working-directory: ./blockvault-frontend
       run: npm run build
+
+  contract-test:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Use Node.js 20.x
+      uses: actions/setup-node@v4
+      with:
+        node-version: 20
+        cache: 'npm'
+        cache-dependency-path: 'contracts/package.json'
+
+    - name: Install dependencies
+      working-directory: ./contracts
+      run: npm install
+
+    - name: Compile contracts
+      working-directory: ./contracts
+      run: npx hardhat compile
+
+    - name: Run contract tests
+      working-directory: ./contracts
+      run: npx hardhat test

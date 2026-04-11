@@ -15,9 +15,13 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding
 import requests
 
+import logging
+
 from ..core.security import require_auth, Role, require_role
 from ..core.db import get_db
 from ..core.audit import log_event
+
+logger = logging.getLogger(__name__)
 from ..core.crypto_client import (
     encrypt_data as crypto_encrypt,
     decrypt_data as crypto_decrypt,
@@ -103,7 +107,7 @@ def _unwrap_wrapped_file_key(rec: Dict[str, Any], key: str) -> Optional[bytes]:
                     metadata["argon2_salt"],
                 )
         except ValueError:
-            pass
+            logger.debug("Passphrase key unwrap failed for file %s", rec.get("_id"))
 
     recovery_wrapped = wrapped_keys.get("recovery")
     if isinstance(recovery_wrapped, str):
@@ -119,14 +123,14 @@ def _unwrap_wrapped_file_key(rec: Dict[str, Any], key: str) -> Optional[bytes]:
                     metadata["recovery_salt"],
                 )
         except ValueError:
-            pass
+            logger.debug("Recovery key unwrap failed for file %s", rec.get("_id"))
 
     wallet_wrapped = wrapped_keys.get("wallet")
     if isinstance(wallet_wrapped, str):
         try:
             return unwrap_file_key_with_wallet(wallet_wrapped, key)
         except ValueError:
-            pass
+            logger.debug("Wallet key unwrap failed for file %s", rec.get("_id"))
 
     return None
 
@@ -861,8 +865,8 @@ def delete_file(file_id: str):  # type: ignore
             if ipfs_mod.ipfs_enabled():
                 client = ipfs_mod._get_client()  # type: ignore[attr-defined]
                 client.pin.rm(cid)  # type: ignore
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("IPFS unpin failed for cid=%s: %s", cid, exc)
     # Reclaim storage quota (best-effort, before deleting record)
     file_size = rec.get("size", 0)
     if file_size > 0:
@@ -871,13 +875,13 @@ def delete_file(file_id: str):  # type: ignore
                 {"address": owner, "storage_used": {"$gte": file_size}},
                 {"$inc": {"storage_used": -file_size}},
             )
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("Storage quota reclaim failed for %s: %s", owner, exc)
     # Delete record
     try:
         coll.delete_one({"_id": oid, "owner": owner})
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("File record deletion failed for %s: %s", file_id, exc)
     log_event("delete", target_id=file_id)
     return {"status": "deleted", "file_id": file_id}
 

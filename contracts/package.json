@@ -1,0 +1,21 @@
+{
+  "name": "blockvault-contracts",
+  "version": "1.0.0",
+  "description": "BlockVault smart contracts — FileRegistry & BlockVaultLegal",
+  "scripts": {
+    "compile": "hardhat compile",
+    "test": "hardhat test",
+    "deploy:local": "hardhat run scripts/deploy-file-registry.ts --network localhost",
+    "deploy:sepolia": "hardhat run scripts/deploy-file-registry.ts --network sepolia",
+    "export-abi": "hardhat run scripts/export-abi.ts",
+    "node": "hardhat node"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^4.0.0",
+    "hardhat": "^2.22.0",
+    "dotenv": "^16.4.0",
+    "typescript": "^5.4.0",
+    "ts-node": "^10.9.0",
+    "@types/node": "^20.11.0"
+  }
+}

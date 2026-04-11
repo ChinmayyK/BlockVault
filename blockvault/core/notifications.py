@@ -97,6 +97,15 @@ def create_notification(
     }
     _notifications_coll().insert_one(notif)
     logger.debug("Notification created for %s: %s", recipient, title)
+
+    # Push real-time event (non-blocking, best-effort)
+    try:
+        from .realtime import emit_to_user, Events
+        serialized = _serialize(notif)
+        emit_to_user(recipient, Events.NOTIFICATION_NEW, serialized)
+    except Exception:
+        pass  # SocketIO unavailable — notification is still persisted
+
     return _serialize(notif)
 
 

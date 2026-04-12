@@ -130,6 +130,9 @@ def _register_handlers(sio):
     from flask_socketio import emit, join_room, leave_room, disconnect
     from flask import request as flask_request
 
+    from .permissions import _get_workspace_role
+    from .cases import get_case
+
     @sio.on("connect")
     def handle_connect(auth=None):
         """Authenticate and auto-join user room on connect."""
@@ -169,9 +172,22 @@ def _register_handlers(sio):
         if room_type not in ("workspace", "case"):
             return
 
-        # TODO: verify membership before allowing room join
-        join_room(room)
+        # Verify membership before allowing room join
         address = getattr(flask_request, "address", "unknown")
+        if room_type == "workspace":
+            role = _get_workspace_role(address, room_id)
+            if role is None:
+                logger.warning("Unprivileged join attempt to %s by %s", room, address)
+                emit("error", {"message": "Access denied to room"})
+                return
+        elif room_type == "case":
+            case = get_case(room_id, address)
+            if case is None:
+                logger.warning("Unprivileged join attempt to %s by %s", room, address)
+                emit("error", {"message": "Access denied to room"})
+                return
+
+        join_room(room)
         logger.debug("User %s joined room %s", address, room)
         emit("room:joined", {"room": room})
 

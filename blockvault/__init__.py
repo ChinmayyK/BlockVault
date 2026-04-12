@@ -537,6 +537,6 @@ def create_app() -> Flask:
         from .core.metrics import init_observability
         init_observability(app)
     except Exception as exc:
-        app.logger.warning("Observability initialization skipped: %%s", exc)
+        app.logger.warning("Observability initialization skipped: %s", exc)
 
     return app

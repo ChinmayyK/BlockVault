@@ -20,7 +20,9 @@ import socket
 import struct
 import threading
 import uuid
+import time
 from typing import Any
+from .metrics import track_crypto
 
 logger = logging.getLogger(__name__)
 
@@ -149,12 +151,15 @@ def encrypt_data(plaintext: bytes, passphrase: str, aad: str | None = None) -> b
     Raises ``CryptoDaemonError`` if daemon is unreachable (→ 503).
     Raises ``RuntimeError`` if the daemon reports failure.
     """
+    t0 = time.monotonic()
     resp = _send_request({
         "operation": "encrypt",
         "passphrase": passphrase,
         "aad": aad or "",
         "data": base64.b64encode(plaintext).decode("ascii"),
     })
+    duration = time.monotonic() - t0
+    track_crypto("encrypt", duration)
     if not resp.get("success"):
         raise RuntimeError(f"Encryption failed: {resp.get('error', 'unknown')}")
     return base64.b64decode(resp["output"])
@@ -167,12 +172,15 @@ def decrypt_data(ciphertext: bytes, passphrase: str, aad: str | None = None) -> 
     Raises ``CryptoDaemonError`` if daemon is unreachable (→ 503).
     Raises ``RuntimeError`` if the daemon reports failure.
     """
+    t0 = time.monotonic()
     resp = _send_request({
         "operation": "decrypt",
         "passphrase": passphrase,
         "aad": aad or "",
         "data": base64.b64encode(ciphertext).decode("ascii"),
     })
+    duration = time.monotonic() - t0
+    track_crypto("decrypt", duration)
     if not resp.get("success"):
         raise RuntimeError(f"Decryption failed: {resp.get('error', 'unknown')}")
     return base64.b64decode(resp["output"])

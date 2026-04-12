@@ -46,6 +46,9 @@ _metrics: Dict[str, Any] = {
     "request_duration_seconds": [],
     "upload_duration_seconds": [],
     "zk_proof_duration_seconds": [],
+    "ipfs_op_total": {},
+    "eth_txn_latency_seconds": [],
+    "crypto_latency_seconds": [],
 }
 
 _MAX_HISTOGRAM_SAMPLES = 1000  # Keep last N samples for percentile calculation
@@ -115,6 +118,23 @@ def track_ws_disconnect() -> None:
     _metrics["ws_connections_active"] = max(0, _metrics.get("ws_connections_active", 0) - 1)
 
 
+def track_ipfs(op: str, success: bool = True) -> None:
+    """Track an IPFS operation (upload/download)."""
+    result = "success" if success else "failure"
+    label = f"{op}:{result}"
+    _inc_map("ipfs_op_total", label)
+
+
+def track_eth(txn_type: str, duration: float) -> None:
+    """Track Ethereum transaction latency."""
+    _observe("eth_txn_latency_seconds", duration)
+
+
+def track_crypto(op: str, duration: float) -> None:
+    """Track cryptographic operation latency (encrypt/decrypt)."""
+    _observe("crypto_latency_seconds", duration)
+
+
 # ---------------------------------------------------------------------------
 # Prometheus-format export
 # ---------------------------------------------------------------------------
@@ -178,8 +198,21 @@ def format_prometheus() -> str:
     lines.append("# TYPE blockvault_ws_connections_active gauge")
     lines.append(f'blockvault_ws_connections_active {_metrics["ws_connections_active"]}')
 
+    lines.append("# HELP blockvault_ipfs_op_total Total IPFS operations")
+    lines.append("# TYPE blockvault_ipfs_op_total counter")
+    for label, count in _metrics.get("ipfs_op_total", {}).items():
+        if ":" in label:
+            op, res = label.split(":", 1)
+            lines.append(f'blockvault_ipfs_op_total{{op="{op}",result="{res}"}} {count}')
+
     # Histograms (simplified percentiles)
-    for hist_name in ("request_duration_seconds", "upload_duration_seconds", "zk_proof_duration_seconds"):
+    for hist_name in (
+        "request_duration_seconds",
+        "upload_duration_seconds",
+        "zk_proof_duration_seconds",
+        "eth_txn_latency_seconds",
+        "crypto_latency_seconds",
+    ):
         samples = _metrics.get(hist_name, [])
         label = f"blockvault_{hist_name}"
         lines.append(f"# HELP {label} Duration in seconds")

@@ -7,6 +7,7 @@ import json
 import logging
 import requests
 from flask import current_app
+from .metrics import track_ipfs
 
 _client = None  # lazy IPFS daemon client (for multiaddr usage)
 logger = logging.getLogger(__name__)
@@ -75,7 +76,14 @@ def add_file(path: Path, pin: bool = True) -> Optional[str]:
             return None
         return result.get("Hash")  # type: ignore[union-attr]
     except Exception as e:
+        track_ipfs("upload", success=False)
         logger.warning("IPFS add failed: %s", e)
+        return None
+    else:
+        if result:
+            track_ipfs("upload", success=True)
+            return result
+        track_ipfs("upload", success=False)
         return None
 
 
@@ -116,25 +124,34 @@ def add_bytes(data: bytes, pin: bool = True) -> Optional[str]:
             return None
         return result.get("Hash")  # type: ignore[union-attr]
     except Exception as e:
+        track_ipfs("upload", success=False)
         logger.warning("IPFS add_bytes failed: %s", e)
+        return None
+    else:
+        if result:
+            track_ipfs("upload", success=True)
+            return result
+        track_ipfs("upload", success=False)
         return None
 
 def cat_to_path(cid: str, out_path: Path) -> None:
-    api_url = current_app.config.get("IPFS_API_URL") or "/dns/localhost/tcp/5001/http"
-    if _is_http_mode(api_url):
-        cat_endpoint = api_url.rstrip("/") + "/api/v0/cat"
-        resp = requests.post(cat_endpoint, headers=_http_headers(), params={"arg": cid}, timeout=60)
-        resp.raise_for_status()
-        data = resp.content
+    try:
+        api_url = current_app.config.get("IPFS_API_URL") or "/dns/localhost/tcp/5001/http"
+        if _is_http_mode(api_url):
+            cat_endpoint = api_url.rstrip("/") + "/api/v0/cat"
+            resp = requests.post(cat_endpoint, headers=_http_headers(), params={"arg": cid}, timeout=60)
+            resp.raise_for_status()
+            data = resp.content
+            with open(out_path, "wb") as f:
+                f.write(data)
+            return
+    except Exception as e:
+        track_ipfs("download", success=False)
+        raise e
+    else:
+        track_ipfs("download", success=True)
         with open(out_path, "wb") as f:
             f.write(data)
-        return
-    client = _get_client()
-    if client is None:
-        raise RuntimeError("No IPFS client available")
-    data = client.cat(cid)  # type: ignore
-    with open(out_path, "wb") as f:
-        f.write(data)
 
 
 def gateway_url(cid: str) -> Optional[str]:
@@ -177,8 +194,12 @@ def unpin(cid: str) -> bool:
         except Exception:
             return False
     except Exception as e:
+        track_ipfs("unpin", success=False)
         logger.warning("IPFS unpin failed: %s", e)
         return False
+    else:
+        track_ipfs("unpin", success=True)
+        return True
 
 
 def verify_cid(data: bytes, expected_cid: str) -> bool:

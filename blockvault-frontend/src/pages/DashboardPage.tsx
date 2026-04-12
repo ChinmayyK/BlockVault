@@ -44,6 +44,7 @@ import { FileDetailsPanel } from "@/components/file/FileDetailsPanel";
 import { FilePreviewPanel } from "@/components/file/FilePreviewPanel";
 import { FileListSkeleton } from "@/components/skeleton/FileListSkeleton";
 import { useDebounce } from "@/hooks/useDebounce";
+import { SystemHealth } from "@/components/security/SystemHealth";
 
 const LazyShareModal = lazy(() =>
   import("@/components/file/ShareModal").then((module) => ({ default: module.ShareModal }))
@@ -308,41 +309,46 @@ export default function DashboardPage() {
           <GlowingDivider className="hidden lg:block mx-10 self-stretch" />
           <GlowingDivider orientation="horizontal" className="lg:hidden my-4" />
 
-          <div className="w-full max-w-sm rounded-2xl border border-borderAccent/25 bg-card/70 p-5 shadow-[0_25px_60px_-30px_rgba(59,130,246,0.45)]">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="text-xs uppercase tracking-[0.25em] text-muted-foreground">
-                  Wallet
-                </p>
-                <p className="mt-1 font-semibold">
-                  {user?.address ? `${user.address.slice(0, 6)}...${user.address.slice(-4)}` : "Not connected"}
-                </p>
-              </div>
-              {user?.address && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleCopyAddress}
-                  className="gap-2 border-borderAccent/50 text-xs"
-                >
-                  {copiedAddress ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-                  {copiedAddress ? "Copied" : "Copy"}
-                </Button>
-              )}
-            </div>
-            <div className="mt-4 grid grid-cols-2 gap-4 text-sm">
-              {[
-                { label: "Files", value: totalFiles.toString() },
-                { label: "Shared", value: totalSharedFiles.toString() },
-                { label: "Shares", value: totalShares.toString() },
-                { label: "Storage", value: formatFileSize(totalSize) },
-              ].map((item) => (
-                <div key={item.label}>
-                  <p className="text-xs uppercase tracking-wide text-muted-foreground">{item.label}</p>
-                  <p className="text-lg font-semibold">{item.value}</p>
+          <div className="flex flex-col gap-4 w-full max-w-sm">
+            <div className="rounded-2xl border border-borderAccent/25 bg-card/70 p-5 shadow-[0_25px_60px_-30px_rgba(59,130,246,0.45)]">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.25em] text-muted-foreground">
+                    Wallet
+                  </p>
+                  <p className="mt-1 font-semibold">
+                    {user?.address ? `${user.address.slice(0, 6)}...${user.address.slice(-4)}` : "Not connected"}
+                  </p>
                 </div>
-              ))}
+                {user?.address && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleCopyAddress}
+                    className="gap-2 border-borderAccent/50 text-xs"
+                  >
+                    {copiedAddress ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                    {copiedAddress ? "Copied" : "Copy"}
+                  </Button>
+                )}
+              </div>
+              <div className="mt-4 grid grid-cols-2 gap-4 text-sm">
+                {[
+                  { label: "Files", value: totalFiles.toString() },
+                  { label: "Shared", value: totalSharedFiles.toString() },
+                  { label: "Shares", value: totalShares.toString() },
+                  { label: "Storage", value: formatFileSize(totalSize) },
+                ].map((item) => (
+                  <div key={item.label}>
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground">{item.label}</p>
+                    <p className="text-lg font-semibold">{item.value}</p>
+                  </div>
+                ))}
+              </div>
             </div>
+            
+            {/* System Health Pulse Overlay */}
+            <SystemHealth />
           </div>
         </div>
       </section>

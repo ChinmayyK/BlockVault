@@ -14,6 +14,7 @@ import time
 import logging
 
 from flask import current_app
+from .metrics import track_eth
 
 logger = logging.getLogger(__name__)
 
@@ -127,8 +128,11 @@ def anchor_file(hash_hex: str, size: int, cid: Optional[str]) -> Optional[str]:
             "chainId": w3.eth.chain_id,
         })
         signed = acct.sign_transaction(txn)
+        t0 = time.monotonic()
         tx_hash = w3.eth.send_raw_transaction(signed.rawTransaction)
         receipt_hash = tx_hash.hex()
+        duration = time.monotonic() - t0
+        track_eth("anchoring", duration)
         logger.info("Anchored file sha256=%s size=%s cid=%s tx=%s", hash_hex, size, cid, receipt_hash)
         return receipt_hash
     except Exception as e:
@@ -174,8 +178,11 @@ def anchor_merkle_root(root_hex: str, file_count: int) -> Optional[str]:
             "chainId": w3.eth.chain_id,
         })
         signed = acct.sign_transaction(txn)
+        t0 = time.monotonic()
         tx_hash = w3.eth.send_raw_transaction(signed.rawTransaction)
         receipt_hash = tx_hash.hex()
+        duration = time.monotonic() - t0
+        track_eth("batch_anchoring", duration)
         logger.info("Anchored Merkle root=%s file_count=%s tx=%s", root_hex, file_count, receipt_hash)
         return receipt_hash
     except Exception as e:

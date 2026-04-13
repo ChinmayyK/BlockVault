@@ -11,7 +11,9 @@ import struct
 import torch
 from transformers import AutoTokenizer, BartForConditionalGeneration
 from typing import Dict, Any, List, Tuple
+import time
 import logging
+from .metrics import track_proof
 
 logger = logging.getLogger(__name__)
 
@@ -94,6 +96,7 @@ class ZKMLSummarizer:
         try:
             # Preprocess
             inputs = self.preprocess_document(text)
+            t0 = time.monotonic()
             
             # Run inference
             with torch.no_grad():
@@ -106,6 +109,8 @@ class ZKMLSummarizer:
                     num_beams=4,
                     early_stopping=True
                 )
+            duration = time.monotonic() - t0
+            track_proof(duration=duration, success=True)
             
             # Decode output
             summary = self.tokenizer.decode(summary_ids[0], skip_special_tokens=True)
@@ -128,6 +133,7 @@ class ZKMLSummarizer:
             return summary, metadata
             
         except Exception as e:
+            track_proof(success=False)
             logger.error(f"Inference error: {str(e)}")
             raise RuntimeError(f"Failed to run inference: {str(e)}")
     
@@ -181,6 +187,40 @@ class ZKMLSummarizer:
         except Exception as e:
             logger.error(f"ZK proof generation error: {str(e)}")
             raise RuntimeError(f"Failed to generate ZK proof: {str(e)}")
+
+    def get_contract_args(self, proof: Dict[str, Any]) -> Tuple[List[int], List[List[int]], List[int], List[int]]:
+        """
+        Format the proof data for BlockVaultLegal.sol contract calls.
+        
+        Returns:
+            Tuple of (a, b, c, publicInputs) formatted as integers
+        """
+        def to_int(v: Any) -> int:
+            if isinstance(v, str):
+                if v.startswith("0x"):
+                    return int(v, 16)
+                if v.isdigit():
+                    return int(v)
+                # Fallback: hash the string if it's not a direct number
+                return int(hashlib.sha256(v.encode()).hexdigest()[:15], 16)
+            return int(v)
+
+        # Groth16 standard formatting
+        a = [to_int(x) for x in proof['pi_a'][:2]]
+        
+        # pi_b is typically [[uint, uint], [uint, uint]]
+        b_flat = proof['pi_b']
+        b = [[to_int(b_flat[0][0]), to_int(b_flat[0][1])], 
+             [to_int(b_flat[1][0]), to_int(b_flat[1][1])]]
+        
+        c = [to_int(x) for x in proof['pi_c'][:2]]
+        
+        # Public signals (truncated hashes for the uint256 inputs)
+        public_inputs = [to_int(x) for x in proof['public_signals']]
+        if len(public_inputs) > 3:
+             public_inputs = public_inputs[:3] # BlockVaultLegal expects uint[3] for ML
+        
+        return a, b, c, public_inputs
     
     def verify_inference(self, text: str, summary: str, proof: Dict[str, Any]) -> bool:
         """

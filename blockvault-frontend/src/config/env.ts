@@ -1,7 +1,12 @@
 // Environment configuration with fallbacks
 export const env = {
   // API Configuration
-  apiUrl: import.meta.env.VITE_API_URL || 'http://localhost:5000',
+  apiUrl:
+    import.meta.env.VITE_API_URL !== undefined
+      ? import.meta.env.VITE_API_URL
+      : typeof window !== 'undefined'
+        ? window.location.origin
+        : 'http://localhost:5000',
   apiTimeout: Number(import.meta.env.VITE_API_TIMEOUT) || 30000,
 
   // IPFS Configuration

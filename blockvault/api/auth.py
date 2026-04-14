@@ -110,13 +110,29 @@ def login():
         recovered = Account.recover_message(encoded, signature=signature)
     except Exception:
         time.sleep(secrets.SystemRandom().uniform(0.01, 0.03))  # timing defense
-        from ..core.audit import log_event
-        log_event("failed_login", details={"address": address, "reason": "invalid_signature"})
+        # Enhanced audit logging for failed login
+        from ..core.enhanced_audit import log_audit_event, AUDIT_EVENTS
+        log_audit_event(
+            event_type=AUDIT_EVENTS["AUTH"]["LOGIN_FAILURE"],
+            category="auth",
+            action="login_attempt",
+            result="failure",
+            user_id=address,
+            metadata={"reason": "invalid_signature"}
+        )
         abort(400, "invalid signature")
     if recovered.lower() != address.lower():
         time.sleep(secrets.SystemRandom().uniform(0.01, 0.03))  # timing defense
-        from ..core.audit import log_event
-        log_event("failed_login", details={"address": address, "reason": "address_mismatch"})
+        # Enhanced audit logging for address mismatch
+        from ..core.enhanced_audit import log_audit_event, AUDIT_EVENTS
+        log_audit_event(
+            event_type=AUDIT_EVENTS["AUTH"]["LOGIN_FAILURE"],
+            category="auth",
+            action="login_attempt",
+            result="failure",
+            user_id=address,
+            metadata={"reason": "address_mismatch", "recovered": recovered}
+        )
         abort(401, "signature does not match address")
 
     # Check if user already has RSA keys registered
@@ -214,8 +230,20 @@ def login():
     platform_role = _get_platform_role(address)
     token = generate_jwt({"sub": address})
 
-    from ..core.audit import log_event
-    log_event("login", details={"address": address})
+    # Enhanced audit logging for successful login
+    from ..core.enhanced_audit import log_audit_event, AUDIT_EVENTS
+    log_audit_event(
+        event_type=AUDIT_EVENTS["AUTH"]["LOGIN_SUCCESS"],
+        category="auth",
+        action="login",
+        result="success",
+        user_id=address,
+        metadata={
+            "platform_role": platform_role.value,
+            "has_rsa_keys": has_rsa_keys,
+            "keys_auto_generated": rsa_private_key is not None
+        }
+    )
 
     # Issue refresh token (7-day, stored in MongoDB)
     device = request.headers.get("User-Agent", "")[:200]

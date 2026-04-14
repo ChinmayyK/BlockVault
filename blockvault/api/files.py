@@ -493,6 +493,28 @@ def upload_file():  # type: ignore
 
     log_event("upload", target_id=file_id_str, details={"name": original_name, "size": len(data), "sha256": sha256})
 
+    # Enhanced audit logging for document upload
+    from ..core.enhanced_audit import log_audit_event, AUDIT_EVENTS
+    log_audit_event(
+        event_type=AUDIT_EVENTS["DOCUMENT"]["UPLOAD"],
+        category="document",
+        action="upload",
+        result="success",
+        user_id=owner,
+        resource_id=file_id_str,
+        resource_type="document",
+        metadata={
+            "filename": original_name,
+            "size": len(data),
+            "sha256": sha256,
+            "workspace_id": workspace_id
+        }
+    )
+
+    # Invalidate document list cache for this user
+    from ..core.cache import cache_invalidate
+    cache_invalidate("document.updated", document_id=file_id_str, user_id=owner)
+
     return {
         "file_id": file_id_str,
         "name": original_name,
@@ -759,6 +781,14 @@ def list_files():  # type: ignore
     owner = getattr(request, "address").lower()  # Normalize to lowercase for consistent lookups
     if request.headers.get('X-Debug-Files') == '1':
         print(f"[DEBUG] list_files owner={owner} after={after_i} limit={limit} q={q} folder={folder_filter} workspace={workspace_id}")
+    
+    # Try to get from cache
+    from ..core.cache import cache_get, cache_set
+    cache_key = f"doc:list:{owner}:{after_i or 0}:{limit}:{q or ''}:{folder_filter or ''}:{workspace_id or ''}"
+    cached_result = cache_get(cache_key)
+    if cached_result:
+        return cached_result
+    
     coll = _files_collection()
 
     items: List[Dict[str, Any]] = []
@@ -837,7 +867,13 @@ def list_files():  # type: ignore
         has_more = True
         items = items[:-1]
     next_after = items[-1]["created_at"] if items else None
-    return {"items": items, "next_after": next_after, "has_more": has_more}
+    
+    result = {"items": items, "next_after": next_after, "has_more": has_more}
+    
+    # Cache the result for 5 minutes
+    cache_set(cache_key, result, ttl=300)
+    
+    return result
 
 
 @bp.delete("/<file_id>", strict_slashes=False)
@@ -882,7 +918,30 @@ def delete_file(file_id: str):  # type: ignore
         coll.delete_one({"_id": oid, "owner": owner})
     except Exception as exc:
         logger.warning("File record deletion failed for %s: %s", file_id, exc)
+    
     log_event("delete", target_id=file_id)
+    
+    # Enhanced audit logging for document deletion
+    from ..core.enhanced_audit import log_audit_event, AUDIT_EVENTS
+    log_audit_event(
+        event_type=AUDIT_EVENTS["DOCUMENT"]["DELETE"],
+        category="document",
+        action="delete",
+        result="success",
+        user_id=owner,
+        resource_id=file_id,
+        resource_type="document",
+        metadata={
+            "filename": rec.get("original_name"),
+            "size": file_size,
+            "cid": cid
+        }
+    )
+    
+    # Invalidate caches
+    from ..core.cache import cache_invalidate
+    cache_invalidate("document.deleted", document_id=file_id, user_id=owner)
+    
     return {"status": "deleted", "file_id": file_id}
 
 
@@ -922,6 +981,27 @@ def update_file(file_id: str):  # type: ignore
         return {"updated": False, "file_id": canonical_id}
     _files_collection().update_one({"_id": rec.get("_id")}, {"$set": update})
     new_rec = _maybe_get_file(canonical_id) or rec
+    
+    # Enhanced audit logging for document update
+    from ..core.enhanced_audit import log_audit_event, AUDIT_EVENTS
+    log_audit_event(
+        event_type=AUDIT_EVENTS["DOCUMENT"]["UPDATE"],
+        category="document",
+        action="update_metadata",
+        result="success",
+        user_id=owner,
+        resource_id=canonical_id,
+        resource_type="document",
+        metadata={
+            "changes": update,
+            "filename": new_rec.get("original_name")
+        }
+    )
+    
+    # Invalidate caches
+    from ..core.cache import cache_invalidate
+    cache_invalidate("document.updated", document_id=canonical_id, user_id=owner)
+    
     return {"updated": True, "file_id": canonical_id, "name": new_rec.get("original_name"), "folder": new_rec.get("folder")}
 
 
@@ -1786,6 +1866,28 @@ def share_file(file_id: str):  # type: ignore
         response["recipient_keys_generated"] = True
 
     log_event("share", target_id=canonical_id, details={"recipient": recipient_addr})
+
+    # Enhanced audit logging for document share
+    from ..core.enhanced_audit import log_audit_event, AUDIT_EVENTS
+    log_audit_event(
+        event_type=AUDIT_EVENTS["DOCUMENT"]["SHARE"],
+        category="document",
+        action="share",
+        result="success",
+        user_id=owner,
+        resource_id=canonical_id,
+        resource_type="document",
+        metadata={
+            "recipient": recipient_addr,
+            "filename": file_rec.get("original_name"),
+            "expires_at": expires_val,
+            "keys_generated": recipient_keys_generated
+        }
+    )
+
+    # Invalidate caches for both owner and recipient
+    from ..core.cache import cache_invalidate
+    cache_invalidate("document.shared", document_id=canonical_id, recipient_id=recipient_addr, user_id=owner)
 
     return response
 

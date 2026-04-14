@@ -135,6 +135,26 @@ def add_bytes(data: bytes, pin: bool = True) -> Optional[str]:
         return None
 
 def cat_to_path(cid: str, out_path: Path) -> None:
+    """Download IPFS content to a file path with caching."""
+    # Try to get from cache first
+    from .cache import cache_get, cache_set, CACHE_KEYS
+    cache_key = CACHE_KEYS["IPFS_CONTENT"].format(hash=cid)
+    cached_data = cache_get(cache_key)
+    
+    if cached_data:
+        # Write cached data to file
+        try:
+            import base64
+            data = base64.b64decode(cached_data)
+            with open(out_path, "wb") as f:
+                f.write(data)
+            track_ipfs("download", success=True)
+            logger.debug(f"IPFS cache hit for CID: {cid}")
+            return
+        except Exception as e:
+            logger.warning(f"Failed to use cached IPFS data: {e}")
+            # Fall through to fetch from IPFS
+    
     try:
         api_url = current_app.config.get("IPFS_API_URL") or "/dns/localhost/tcp/5001/http"
         if _is_http_mode(api_url):
@@ -144,14 +164,21 @@ def cat_to_path(cid: str, out_path: Path) -> None:
             data = resp.content
             with open(out_path, "wb") as f:
                 f.write(data)
+            
+            # Cache the data for 24 hours (configurable TTL)
+            try:
+                import base64
+                cache_ttl = int(os.getenv("IPFS_CACHE_TTL", "86400"))  # 24 hours default
+                cache_set(cache_key, base64.b64encode(data).decode(), ttl=cache_ttl)
+                logger.debug(f"Cached IPFS content for CID: {cid}")
+            except Exception as e:
+                logger.warning(f"Failed to cache IPFS data: {e}")
+            
+            track_ipfs("download", success=True)
             return
     except Exception as e:
         track_ipfs("download", success=False)
         raise e
-    else:
-        track_ipfs("download", success=True)
-        with open(out_path, "wb") as f:
-            f.write(data)
 
 
 def gateway_url(cid: str) -> Optional[str]:

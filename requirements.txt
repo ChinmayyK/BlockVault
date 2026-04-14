@@ -12,6 +12,12 @@ Flask-Limiter>=3.5.0
 # MongoDB Database
 pymongo==4.6.0
 
+# PostgreSQL Database (for enhanced features)
+psycopg2-binary>=2.9.9
+
+# Elasticsearch (for advanced search)
+elasticsearch>=8.11.0
+
 # S3-Compatible Object Storage
 boto3>=1.34.0
 

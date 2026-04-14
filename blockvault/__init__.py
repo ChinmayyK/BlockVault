@@ -9,6 +9,7 @@ Security features:
 import logging
 import os
 import sys
+import io
 from flask import Flask, jsonify, request as flask_request
 from flask_cors import CORS
 from flask_limiter import Limiter
@@ -117,6 +118,9 @@ def create_app() -> Flask:
         SMTP_PASS=cfg.smtp_pass,
         EMAIL_FROM=cfg.email_from,
         FRONTEND_URL=cfg.frontend_url,
+        REDIS_URL=cfg.redis_url,
+        POSTGRES_URI=cfg.postgres_uri,
+        ELASTICSEARCH_URL=cfg.elasticsearch_url,
     )
 
     # -----------------------------------------------------------------
@@ -129,6 +133,22 @@ def create_app() -> Flask:
     # -----------------------------------------------------------------
     init_db(app)
     init_s3(app)
+    
+    # Initialize PostgreSQL for enhanced features
+    try:
+        from .core.postgres_db import init_postgres, close_postgres_connection
+        init_postgres(app)
+        app.teardown_appcontext(close_postgres_connection)
+    except Exception as e:
+        app.logger.warning("PostgreSQL initialization failed (non-fatal): %s", e)
+    
+    # Initialize Redis cache
+    try:
+        from .core.cache import init_cache
+        init_cache(app)
+    except Exception as e:
+        app.logger.warning("Redis cache initialization failed (non-fatal): %s", e)
+    
     with app.app_context():
         try:
             bootstrap_settings_into_config()
@@ -203,6 +223,21 @@ def create_app() -> Flask:
         response.headers["Content-Security-Policy"] = csp
         if not app.debug:
             response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        
+        # Gzip compression for responses > 1KB
+        if (response.content_length and response.content_length > 1024 and
+            'gzip' in flask_request.headers.get('Accept-Encoding', '').lower() and
+            response.mimetype in ('application/json', 'text/html', 'text/css', 'text/javascript', 'application/javascript')):
+            import gzip
+            response.direct_passthrough = False
+            gzip_buffer = io.BytesIO()
+            with gzip.GzipFile(mode='wb', fileobj=gzip_buffer, compresslevel=6) as gzip_file:
+                gzip_file.write(response.get_data())
+            response.set_data(gzip_buffer.getvalue())
+            response.headers['Content-Encoding'] = 'gzip'
+            response.headers['Content-Length'] = len(response.get_data())
+            response.headers['Vary'] = 'Accept-Encoding'
+        
         return response
 
     # -----------------------------------------------------------------
@@ -287,6 +322,12 @@ def create_app() -> Flask:
     from .api.versions import bp as versions_bp
     app.register_blueprint(versions_bp)
 
+    from .api.audit_logs import bp as audit_logs_bp
+    app.register_blueprint(audit_logs_bp)
+
+    from .api.performance import bp as performance_bp
+    app.register_blueprint(performance_bp)
+
     # -----------------------------------------------------------------
     # Utility / health endpoints
     # -----------------------------------------------------------------
@@ -360,6 +401,19 @@ def create_app() -> Flask:
             checks["mongodb"] = {"status": "error", "error": str(exc)[:200]}
             overall = "unhealthy"
 
+        # --- PostgreSQL ---
+        try:
+            from .core.postgres_db import get_pool_stats
+            stats = get_pool_stats()
+            checks["postgresql"] = stats
+            if stats.get("status") != "active":
+                if overall != "unhealthy":
+                    overall = "degraded"
+        except Exception as exc:
+            checks["postgresql"] = {"status": "error", "error": str(exc)[:200]}
+            if overall != "unhealthy":
+                overall = "degraded"
+
         # --- S3 / MinIO ---
         try:
             from .core import s3 as _s3
@@ -372,7 +426,20 @@ def create_app() -> Flask:
             if overall != "unhealthy":
                 overall = "degraded"
 
-        # --- Redis ---
+        # --- Redis Cache ---
+        try:
+            from .core.cache import get_cache_stats
+            cache_stats = get_cache_stats()
+            checks["redis_cache"] = cache_stats
+            if cache_stats.get("status") not in ("active", "disabled"):
+                if overall != "unhealthy":
+                    overall = "degraded"
+        except Exception as exc:
+            checks["redis_cache"] = {"status": "error", "error": str(exc)[:200]}
+            if overall != "unhealthy":
+                overall = "degraded"
+
+        # --- Redis (Celery) ---
         try:
             import redis as _redis_mod
             redis_url = app.config.get("CELERY_BROKER_URL") or os.environ.get("CELERY_BROKER_URL", "")
@@ -381,11 +448,11 @@ def create_app() -> Flask:
                 rc = _redis_mod.from_url(redis_url, socket_connect_timeout=2)
                 rc.ping()
                 latency = round((_time.monotonic() - t0) * 1000, 1)
-                checks["redis"] = {"status": "ok", "latency_ms": latency}
+                checks["redis_celery"] = {"status": "ok", "latency_ms": latency}
             else:
-                checks["redis"] = {"status": "not_configured"}
+                checks["redis_celery"] = {"status": "not_configured"}
         except Exception as exc:
-            checks["redis"] = {"status": "error", "error": str(exc)[:200]}
+            checks["redis_celery"] = {"status": "error", "error": str(exc)[:200]}
             if overall != "unhealthy":
                 overall = "degraded"
 

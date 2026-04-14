@@ -43,6 +43,8 @@ class Config:
     email_from: str = "noreply@blockvault.io"
     frontend_url: str = "http://localhost:3000"
     redis_url: str = "redis://localhost:6379/1"
+    postgres_uri: str = "postgresql://localhost:5432/blockvault"
+    elasticsearch_url: str = "http://localhost:9200"
 
 
 def load_config() -> Config:
@@ -77,6 +79,8 @@ def load_config() -> Config:
     email_from = os.getenv("EMAIL_FROM", "noreply@blockvault.io")
     frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
     redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/1")
+    postgres_uri = os.getenv("POSTGRES_URI", "postgresql://localhost:5432/blockvault")
+    elasticsearch_url = os.getenv("ELASTICSEARCH_URL", "http://localhost:9200")
 
     if env == "production":
         if not secret_key or secret_key == DEFAULT_SECRET_KEY:
@@ -116,4 +120,6 @@ def load_config() -> Config:
         email_from=email_from,
         frontend_url=frontend_url,
         redis_url=redis_url,
+        postgres_uri=postgres_uri,
+        elasticsearch_url=elasticsearch_url,
     )

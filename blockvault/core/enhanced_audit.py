@@ -73,6 +73,14 @@ ALERT_RULES = [
         "pattern": "new_location",
         "severity": "medium",
     },
+    {
+        "rule_id": "mass-download-anomaly",
+        "name": "Mass Document Download Anomaly",
+        "event_type": "document.download",
+        "threshold": 20,
+        "time_window": 60,  # 1 minute
+        "severity": "critical",
+    },
 ]
 
 
@@ -375,6 +383,24 @@ class AuditLogger:
                 "description": description,
             }
         )
+
+        if severity == "critical" and user_id:
+            self._auto_quarantine_user(user_id, rule_id)
+            
+    def _auto_quarantine_user(self, user_id: str, reason: str) -> None:
+        try:
+            from blockvault.core.db import get_db
+            get_db()["users"].update_one(
+                {"address": user_id.lower()},
+                {"$set": {"quarantined": True, "quarantine_reason": reason}}
+            )
+            logger.critical(f"User {user_id} auto-quarantined due to {reason}")
+            
+            # Optionally revoke refresh tokens to force immediate re-auth which will fail
+            from blockvault.core.security import revoke_all_refresh_tokens
+            revoke_all_refresh_tokens(user_id)
+        except Exception as exc:
+            logger.error(f"Failed to auto-quarantine user: {exc}")
 
 
 # Global audit logger instance

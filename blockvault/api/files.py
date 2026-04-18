@@ -40,6 +40,8 @@ from ..core.zk_redaction import (
     compute_proof_hash,
     verify_redaction_proof,
 )
+from ..core.watermark import add_watermark
+
 
 # Configurable upload size limit (default 100 MB)
 MAX_UPLOAD_BYTES = int(os.environ.get("MAX_UPLOAD_BYTES", str(100 * 1024 * 1024)))
@@ -595,10 +597,21 @@ def download_file(file_id: str):  # type: ignore
                 mimetype=mimetype,
             )
             resp.headers["X-Wrapped-Keys"] = json.dumps(rec["wrapped_keys"])
-            if rec.get("aad"):
-                resp.headers["X-File-AAD"] = rec["aad"]
+            resp.headers["X-File-AAD"] = rec["aad"]
             
             log_event("download_v2", target_id=file_id)
+            
+            from ..core.enhanced_audit import log_audit_event, AUDIT_EVENTS
+            log_audit_event(
+                event_type=AUDIT_EVENTS["DOCUMENT"]["DOWNLOAD"],
+                category="document",
+                action="download",
+                result="success",
+                user_id=requester,
+                resource_id=file_id,
+                resource_type="document",
+                metadata={"filename": rec.get("original_name"), "size": rec.get("size"), "version": "v2"}
+            )
             return resp
             
         # V1: Legacy Backend Decryption
@@ -625,6 +638,13 @@ def download_file(file_id: str):  # type: ignore
                 elif filename.endswith('.html'):
                     mimetype = 'text/html; charset=utf-8'
                     
+            filename = rec["original_name"].lower()
+            if filename.endswith('.pdf'):
+                # Apply dynamic digital watermark to PDFs
+                import datetime
+                watermark_msg = f"BlockVault Trace - {requester} - {request.remote_addr} - {datetime.datetime.now(datetime.timezone.utc).isoformat()}"
+                data = add_watermark(data, watermark_msg)
+                    
             resp = send_file(
                 io.BytesIO(data),
                 as_attachment=not inline,
@@ -632,6 +652,18 @@ def download_file(file_id: str):  # type: ignore
                 mimetype=mimetype,
             )
             log_event("download_v1", target_id=file_id)
+            
+            from ..core.enhanced_audit import log_audit_event, AUDIT_EVENTS
+            log_audit_event(
+                event_type=AUDIT_EVENTS["DOCUMENT"]["DOWNLOAD"],
+                category="document",
+                action="download",
+                result="success",
+                user_id=requester,
+                resource_id=file_id,
+                resource_type="document",
+                metadata={"filename": rec.get("original_name"), "size": rec.get("size"), "version": "v1"}
+            )
             return resp
 
     except Exception as e:  # unexpected

@@ -222,6 +222,13 @@ def require_auth(fn: F) -> F:
         sub = decoded.get("sub")
         if not sub:
             abort(401, "invalid subject")
+        
+        # Check if user is quarantined by Insider Threat Engine
+        from .db import get_db
+        user_doc = get_db()["users"].find_one({"address": sub.lower()})
+        if user_doc and user_doc.get("quarantined"):
+            abort(403, "Account temporarily suspended due to suspicious activity. Please contact administrator.")
+            
         request.address = sub  # type: ignore[attr-defined]
         _attach_role(sub)
         return fn(*args, **kwargs)

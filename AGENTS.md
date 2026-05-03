@@ -4,12 +4,12 @@ This file provides guidance to WARP (warp.dev) when working with code in this re
 
 ## Repository scope
 - Monorepo with multiple runtimes:
-  - Flask backend API (`app.py`, `blockvault/`)
-  - React/Vite frontend (`blockvault-frontend/`)
-  - FastAPI redaction microservice (`blockvault-redactor/`)
-  - Celery worker for async tasks (`blockvault/core/celery_app.py`, `blockvault/core/tasks.py`)
-  - Solidity contracts + Hardhat project (`contracts/`)
-  - ZK proof tooling for redaction (`zk/redaction/`)
+  - Flask backend API (`backend/app.py`, `backend/blockvault/`)
+  - React/Vite frontend (`frontend/`)
+  - FastAPI redaction microservice (`services/redactor/`)
+  - Celery worker (`backend/blockvault/core/celery_app.py`)
+  - Solidity contracts (`blockchain/contracts/`)
+  - ZK proof tooling (`blockchain/zk/redaction/`)
 
 ## Existing guidance files
 - No existing `AGENTS.md` or `WARP.md` was found.
@@ -26,13 +26,13 @@ This file provides guidance to WARP (warp.dev) when working with code in this re
 
 ### Backend (Flask + Celery)
 - Install backend deps:
-  - `python3 -m pip install -r requirements.txt`
+  - `python3 -m pip install -r backend/requirements.txt`
 - Run backend API directly:
-  - `python3 app.py`
+  - `python3 backend/app.py`
 - Run Celery worker:
-  - `python3 -m celery -A blockvault.core.celery_app worker --loglevel=info --pool=solo`
+  - `python3 -m celery -A blockvault.core.celery_app worker --loglevel=info --pool=solo` (run from `backend/` dir)
 - Run tests:
-  - `pytest tests/ -v`
+  - `pytest backend/tests/ -v`
 - Run a single test file:
   - `pytest tests/test_security.py -v`
 - Run a single test function:
@@ -43,9 +43,9 @@ This file provides guidance to WARP (warp.dev) when working with code in this re
 
 ### Frontend (Vite + React + TypeScript)
 - Install deps:
-  - `npm --prefix blockvault-frontend ci`
+  - `npm --prefix frontend ci`
 - Dev server:
-  - `npm --prefix blockvault-frontend run dev`
+  - `npm --prefix frontend run dev`
 - Build:
   - `npm --prefix blockvault-frontend run build`
 - Lint:
@@ -59,13 +59,13 @@ This file provides guidance to WARP (warp.dev) when working with code in this re
 
 ### Redactor service (FastAPI)
 - Install deps:
-  - `python3 -m pip install -r blockvault-redactor/requirements.txt`
+  - `python3 -m pip install -r services/redactor/requirements.txt`
 - Run service:
-  - `python3 -m uvicorn blockvault-redactor.app.main:app --host 0.0.0.0 --port 8000`
+  - `python3 -m uvicorn services.redactor.app.main:app --host 0.0.0.0 --port 8000`
 
 ### Smart contracts (Hardhat)
 - Install deps:
-  - `npm --prefix contracts install`
+  - `npm --prefix blockchain/contracts install`
 - Compile:
   - `npm --prefix contracts run compile`
 - Test all:
@@ -77,7 +77,7 @@ This file provides guidance to WARP (warp.dev) when working with code in this re
 
 ### ZK redaction tooling
 - Install deps:
-  - `npm --prefix zk/redaction install`
+  - `npm --prefix blockchain/zk/redaction install`
 - Backend proof generation depends on artifacts under `zk/redaction/build/` and scripts under `zk/redaction/scripts/`.
 - `start.sh` attempts to prepare these artifacts automatically when possible.
 

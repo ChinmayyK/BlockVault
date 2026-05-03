@@ -310,7 +310,7 @@ start_services() {
 
   # Start Redactor (FastAPI)
   echo -e "${YELLOW}Starting Redactor service...${NC}"
-  cd "$SCRIPT_DIR/blockvault-redactor"
+  cd "$SCRIPT_DIR/services/redactor"
   if [ -x ".venv/bin/uvicorn" ]; then
     nohup .venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000 >"$LOG_DIR/redactor.log" 2>&1 &
   else
@@ -325,7 +325,7 @@ start_services() {
   echo -e "${GREEN}✓ Redactor started (PID: $REDACTOR_PID) on http://localhost:8000${NC}"
 
   # Start Backend
-  cd "$SCRIPT_DIR"
+  cd "$SCRIPT_DIR/backend"
   echo -e "${YELLOW}Starting Flask Backend...${NC}"
   echo -e "${YELLOW}Using Python runtime: $PYTHON_BIN${NC}"
 
@@ -336,7 +336,7 @@ start_services() {
   fi
 
   echo -e "${YELLOW}Preparing ZK proof runtime...${NC}"
-  cd "$SCRIPT_DIR/zk/redaction"
+  cd "$SCRIPT_DIR/blockchain/zk/redaction"
   if [ ! -x "node_modules/.bin/snarkjs" ]; then
     echo -e "${YELLOW}Installing ZK Node dependencies...${NC}"
     npm install
@@ -349,7 +349,7 @@ start_services() {
       bash ./scripts/setup.sh
       echo -e "${GREEN}✓ ZK proof artifacts generated${NC}"
     else
-      echo -e "${YELLOW}⚠ circom is not installed. Redaction proofs will fail until zk/redaction is set up.${NC}"
+      echo -e "${YELLOW}⚠ circom is not installed. Redaction proofs will fail until blockchain/zk/redaction is set up.${NC}"
     fi
   elif command -v circom >/dev/null 2>&1; then
     echo -e "${YELLOW}Generating ZK circuit artifacts...${NC}"
@@ -359,7 +359,7 @@ start_services() {
     echo -e "${YELLOW}⚠ circom is not installed. Redaction proofs will fail until zk/redaction is set up.${NC}"
   fi
 
-  cd "$SCRIPT_DIR"
+  cd "$SCRIPT_DIR/backend"
   nohup env \
     CELERY_BROKER_URL="${CELERY_BROKER_URL:-redis://localhost:6379/0}" \
     S3_BUCKET="${S3_BUCKET:-mock-bucket}" \
@@ -378,7 +378,7 @@ start_services() {
   fi
   echo -e "${GREEN}✓ Backend started (PID: $BACKEND_PID) on http://localhost:5001${NC}"
 
-  cd "$SCRIPT_DIR"
+  cd "$SCRIPT_DIR/backend"
   echo -e "${YELLOW}Starting Celery worker...${NC}"
   nohup env \
     CELERY_BROKER_URL="${CELERY_BROKER_URL:-redis://localhost:6379/0}" \
@@ -400,7 +400,7 @@ start_services() {
 
   # Start Frontend
   echo -e "${YELLOW}Starting Vite Frontend...${NC}"
-  cd "$SCRIPT_DIR/blockvault-frontend"
+  cd "$SCRIPT_DIR/frontend"
 
   if [ ! -d "node_modules" ] || [ ! -f "node_modules/.bin/vite" ]; then
     echo -e "${YELLOW}Installing frontend dependencies...${NC}"

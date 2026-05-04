@@ -50,8 +50,8 @@ services:
 
   crypto:
     build:
-      context: .
-      dockerfile: Dockerfile.crypto
+      context: services/crypto
+      dockerfile: Dockerfile
     restart: unless-stopped
     environment:
       - CRYPTO_LISTEN_ADDR=0.0.0.0:9876
@@ -82,7 +82,7 @@ services:
       - redis
 
   celery-worker:
-    build: .
+    build: backend
     command: celery -A blockvault.core.celery_app worker --loglevel=info
     environment:
       - MONGO_URI=mongodb://mongo:27017/blockvault

@@ -82,12 +82,15 @@ BlockVault leverages a multi-layered security architecture:
 ---
 
 ## 📂 Folder Structure
-- `blockvault/` - Flask API and core security logic.
-- `blockvault-frontend/` - Modern React user interface.
-- `blockvault-redactor/` - FastAPI microservice for document analysis.
-- `contracts/` - Solidity smart contracts for the File Registry.
-- `zk/redaction/` - ZK-circuits and proof generation logic.
-- `tests/` - Comprehensive integration and unit tests.
+- `backend/` - Flask API, main logic, and background tasks.
+- `frontend/` - Modern React user interface.
+- `services/`
+    - `redactor/` - FastAPI microservice for document analysis.
+    - `crypto/` - High-performance Rust crypto daemon.
+- `blockchain/`
+    - `contracts/` - Smart contracts for the File Registry.
+    - `zk/` - ZK-circuits and proof generation logic.
+- `tests/` - (Now located inside `backend/tests/`).
 
 ---
 

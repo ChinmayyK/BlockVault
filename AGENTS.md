@@ -101,7 +101,7 @@ This file provides guidance to WARP (warp.dev) when working with code in this re
   3. optional on-chain anchoring (`blockvault/core/onchain.py`) using `contracts/FileRegistry.sol`
   4. asynchronous background processing in Celery (`blockvault/core/tasks.py`)
 - Redaction and proof generation:
-  - analysis/redaction service endpoint integration uses external redactor (`blockvault-redactor/app/main.py`) with inline fallback paths in backend code.
+  - analysis/redaction service endpoint integration uses external redactor (`services/redactor/app/main.py`) with inline fallback paths in backend code.
   - ZK proof input/proof generation helpers are in `blockvault/core/zk_redaction.py`.
   - async proof generation + status/progress persistence lives in Celery tasks (`generate_redaction_proof_task`).
 
@@ -115,10 +115,10 @@ This file provides guidance to WARP (warp.dev) when working with code in this re
 
 ### 4) Real-time updates
 - Backend WebSocket infra is in `blockvault/core/realtime.py` (Flask-SocketIO + JWT handshake + room model).
-- Frontend subscription/invalidation logic is in `blockvault-frontend/src/hooks/useRealtimeEvents.ts`, which maps socket events to TanStack Query cache invalidation and UI notifications.
+- Frontend subscription/invalidation logic is in `frontend/src/hooks/useRealtimeEvents.ts`, which maps socket events to TanStack Query cache invalidation and UI notifications.
 
 ### 5) Frontend composition
-- App bootstrap and global provider stack are in `blockvault-frontend/src/App.tsx`.
+- App bootstrap and global provider stack are in `frontend/src/App.tsx`.
 - Key frontend structure:
   - `src/api/`: HTTP client and service wrappers
   - `src/contexts/`: auth/workspace/file/RBAC state providers
@@ -134,4 +134,4 @@ This file provides guidance to WARP (warp.dev) when working with code in this re
   - `blockvault/api/files.py`
   - `blockvault/core/tasks.py`
   - `blockvault/core/zk_redaction.py`
-  - `blockvault-redactor/app/main.py`
+  - `services/redactor/app/main.py`

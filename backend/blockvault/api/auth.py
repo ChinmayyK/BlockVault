@@ -327,6 +327,7 @@ def refresh_token_endpoint():
     new_access, new_refresh = result
 
     # Log audit event
+    from blockvault.core.audit import log_event
     address = request.address if hasattr(request, "address") else "unknown"
     log_event("settings_update", target_id=address, details={"action": "token_refresh"})
 

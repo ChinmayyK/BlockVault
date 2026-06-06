@@ -146,8 +146,12 @@ contract BlockVaultLegal is Ownable, ReentrancyGuard, Pausable {
         if (docHash == bytes32(0)) revert InvalidAddress();
         if (documentRegistry[docHash].exists) revert DocumentAlreadyExists();
         
+        uint[] memory dynPublicInputs = new uint[](2);
+        dynPublicInputs[0] = publicInputs[0];
+        dynPublicInputs[1] = publicInputs[1];
+        
         // Verify the ZK proof of integrity
-        if (!_verifyZKProof(integrityVerifier, a, b, c, publicInputs)) {
+        if (!_verifyZKProof(integrityVerifier, a, b, c, dynPublicInputs)) {
             revert InvalidProof();
         }
         
@@ -188,8 +192,12 @@ contract BlockVaultLegal is Ownable, ReentrancyGuard, Pausable {
         if (documentRegistry[originalHash].owner != msg.sender) revert NotDocumentOwner();
         if (documentRegistry[transformedHash].exists) revert DocumentAlreadyExists();
         
+        uint[] memory dynPublicInputs = new uint[](2);
+        dynPublicInputs[0] = publicInputs[0];
+        dynPublicInputs[1] = publicInputs[1];
+        
         // Verify the ZKPT proof
-        if (!_verifyZKProof(zkptVerifier, a, b, c, publicInputs)) {
+        if (!_verifyZKProof(zkptVerifier, a, b, c, dynPublicInputs)) {
             revert InvalidProof();
         }
         
@@ -404,8 +412,13 @@ contract BlockVaultLegal is Ownable, ReentrancyGuard, Pausable {
         uint[2] calldata c,
         uint[3] calldata publicInputs
     ) external whenNotPaused documentExists(_docHash) {
+        uint[] memory dynPublicInputs = new uint[](3);
+        dynPublicInputs[0] = publicInputs[0];
+        dynPublicInputs[1] = publicInputs[1];
+        dynPublicInputs[2] = publicInputs[2];
+        
         // Verify the ZKML proof
-        if (!_verifyZKProof(zkmlVerifier, a, b, c, publicInputs)) {
+        if (!_verifyZKProof(zkmlVerifier, a, b, c, dynPublicInputs)) {
             revert InvalidProof();
         }
         

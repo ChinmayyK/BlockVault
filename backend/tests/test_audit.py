@@ -25,8 +25,15 @@ def mock_db(monkeypatch):
         def find_one(self, query):
             return None
 
+    class MockMerkle:
+        def insert_one(self, doc): pass
+        def find_one(self, query): return {"_id": "global", "leaves": []}
+        def update_one(self, q, u): pass
+
     class MockDB:
         def __getitem__(self, name):
+            if name == "merkle_state":
+                return MockMerkle()
             return MockCollection()
 
     mocked_db = MockDB()

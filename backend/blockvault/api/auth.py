@@ -310,27 +310,33 @@ def me():  # type: ignore
     }
 
 
-@bp.post("/auth/refresh")
+@bp.post("/refresh")
 def refresh_token_endpoint():
     """Exchange a valid refresh token for a new access + refresh pair."""
     data = request.get_json(silent=True) or {}
     old_token = data.get("refresh_token")
-    if not old_token or not isinstance(old_token, str):
+    device = request.headers.get("User-Agent", "unknown")
+
+    if not old_token:
         abort(400, "refresh_token required")
 
-    device = request.headers.get("User-Agent", "")[:200]
     result = rotate_refresh_token(old_token, device_fingerprint=device)
     if not result:
         abort(401, "refresh token invalid or expired")
 
     new_access, new_refresh = result
+
+    # Log audit event
+    address = request.address if hasattr(request, "address") else "unknown"
+    log_event("settings_update", target_id=address, details={"action": "token_refresh"})
+
     return {
-        "token": new_access,
+        "jwt": new_access,
         "refresh_token": new_refresh,
     }
 
 
-@bp.post("/auth/revoke")
+@bp.post("/revoke")
 @require_auth
 def revoke_session():
     """Revoke a specific refresh token or all tokens for the user."""

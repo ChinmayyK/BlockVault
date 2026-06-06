@@ -16,38 +16,38 @@ def _ensure_stubs():
 @pytest.fixture
 def mock_db(monkeypatch):
     """Mock the get_db function to return an in-memory collection."""
-    _ensure_stubs()
-
     inserted = []
 
     class MockCollection:
         def insert_one(self, doc):
             inserted.append(doc)
             return type("Result", (), {"inserted_id": "mock_id"})()
+        def find_one(self, query):
+            return None
 
     class MockDB:
         def __getitem__(self, name):
             return MockCollection()
 
-    # Create a mock db module
-    db_mod = types.ModuleType("blockvault.core.db")
-    db_mod.get_db = lambda: MockDB()
-    sys.modules["blockvault.core.db"] = db_mod
-
+    mocked_db = MockDB()
+    monkeypatch.setattr("blockvault.core.db.get_db", lambda: mocked_db)
+    try:
+        import blockvault.core.audit
+        monkeypatch.setattr(blockvault.core.audit, "get_db", lambda: mocked_db, raising=False)
+    except Exception:
+        pass
+    try:
+        import blockvault.core.merkle_tree
+        monkeypatch.setattr(blockvault.core.merkle_tree, "get_db", lambda: mocked_db, raising=False)
+    except Exception:
+        pass
     return inserted
 
 
 @pytest.fixture
 def audit(mock_db):
     """Import audit module with mocked DB."""
-    import importlib.util
-    spec = importlib.util.spec_from_file_location(
-        "blockvault.core.audit",
-        "blockvault/core/audit.py",
-    )
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules["blockvault.core.audit"] = mod
-    spec.loader.exec_module(mod)
+    import blockvault.core.audit as mod
     return mod
 
 

@@ -45,9 +45,9 @@ def test_mark_notification_read(client, auth_headers):
     assert resp.json["unread_count"] == 1
     
     # Mark read
-    patch_resp = client.patch(f"/notifications/{nid}/read", headers=headers)
+    patch_resp = client.post(f"/notifications/{nid}/read", headers=headers)
     assert patch_resp.status_code == 200
-    assert patch_resp.json["status"] == "ok"
+    assert patch_resp.json["ok"] is True
     
     # Verify unread is 0
     resp = client.get("/notifications", headers=headers)
@@ -64,6 +64,6 @@ def test_mark_all_read(client, auth_headers):
     
     post_resp = client.post("/notifications/read-all", headers=headers)
     assert post_resp.status_code == 200
-    assert post_resp.json["modified_count"] == 2
+    assert post_resp.json["marked_read"] == 2
     
     assert client.get("/notifications", headers=headers).json["unread_count"] == 0

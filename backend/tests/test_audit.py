@@ -29,6 +29,8 @@ def mock_db(monkeypatch):
         def insert_one(self, doc): pass
         def find_one(self, query): return {"_id": "global", "leaves": []}
         def update_one(self, q, u): pass
+        def find_one_and_update(self, q, u, return_document=False):
+            return {"_id": "global", "leaves": ["dummy"]}
 
     class MockDB:
         def __getitem__(self, name):

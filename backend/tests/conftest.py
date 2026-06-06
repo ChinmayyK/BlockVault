@@ -56,6 +56,7 @@ def app(mongo_client):
     os.environ.setdefault("MONGO_DB", "blockvault_test")
     os.environ.setdefault("JWT_SECRET", "test-jwt-secret")
     os.environ.setdefault("JWT_EXP_MINUTES", "60")
+    os.environ.setdefault("S3_BUCKET", "test-bucket")
 
     # Patch get_db and get_client before importing main app
     test_db = mongo_client["blockvault_test"]

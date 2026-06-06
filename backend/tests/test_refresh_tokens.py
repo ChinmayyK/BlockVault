@@ -33,7 +33,7 @@ def test_revoke_refresh_tokens(client, auth_headers):
     
     db = get_db()
     # Ensure it's there
-    user_doc = db["users"].find_one({"address": address})
+    user_doc = db["users"].find_one({"address": address.lower()})
     assert len(user_doc["refresh_tokens"]) >= 1
     
     # Revoke
@@ -41,5 +41,5 @@ def test_revoke_refresh_tokens(client, auth_headers):
     assert resp.status_code == 200
     
     # Ensure it's gone
-    user_doc = db["users"].find_one({"address": address})
+    user_doc = db["users"].find_one({"address": address.lower()})
     assert len(user_doc.get("refresh_tokens", [])) == 0

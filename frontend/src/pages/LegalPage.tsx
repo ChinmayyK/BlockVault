@@ -3,7 +3,6 @@ import {
   FileText, 
   Shield, 
   PenTool, 
-  Brain, 
   Search, 
   Plus, 
   Grid3x3,
@@ -24,7 +23,6 @@ import { NotarizeDocumentModal } from "@/components/legal/modals/NotarizeDocumen
 import { LegalDocumentUploadModal } from "@/components/legal/modals/LegalDocumentUploadModal";
 import { RedactionModal } from "@/components/legal/modals/RedactionModal";
 import { RequestSignatureModal } from "@/components/legal/modals/RequestSignatureModal";
-import { ZKMLAnalysisModal } from "@/components/legal/modals/ZKMLAnalysisModal";
 import { RevokeAccessModal } from "@/components/legal/modals/RevokeAccessModal";
 import { RevokeDocumentModal } from "@/components/legal/modals/RevokeDocumentModal";
 import { SignatureRequests } from "@/components/legal/modals/SignatureRequests";
@@ -49,11 +47,10 @@ export default function LegalPage() {
     return rbac.canPerformAction(permission as any);
   };
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedTab, setSelectedTab] = useState<'documents' | 'signatures' | 'sent-signatures' | 'analysis'>('documents');
+  const [selectedTab, setSelectedTab] = useState<'documents' | 'signatures' | 'sent-signatures'>('documents');
   const [showNotarizeModal, setShowNotarizeModal] = useState(false);
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [showRedactionModal, setShowRedactionModal] = useState(false);
-  const [showZKMLModal, setShowZKMLModal] = useState(false);
   const [showRequestSignatureModal, setShowRequestSignatureModal] = useState(false);
   const [showRevokeAccessModal, setShowRevokeAccessModal] = useState(false);
   const [showRevokeDocumentModal, setShowRevokeDocumentModal] = useState(false);
@@ -66,7 +63,6 @@ export default function LegalPage() {
   const [signatureQueue, setSignatureQueue] = useState<any[]>([]);
   const [currentSignatureDocument, setCurrentSignatureDocument] = useState<any | null>(null);
   const [signatureModalKey, setSignatureModalKey] = useState(0);
-  const [analysisDocument, setAnalysisDocument] = useState<any | null>(null);
   const [actionDoc, setActionDoc] = useState<any | null>(null);
   const [pendingDeleteDoc, setPendingDeleteDoc] = useState<any | null>(null);
   const hintTimeoutRef = useRef<number | null>(null);
@@ -141,17 +137,15 @@ export default function LegalPage() {
 
   // Optimize stats calculation with single-pass useMemo
   const stats = useMemo(() => {
-    let notarized = 0, signaturesPending = 0, aiAnalyzed = 0;
+    let notarized = 0, signaturesPending = 0;
     legalDocuments.forEach(doc => {
       if (doc.blockchainHash) notarized++;
       if (doc.status === 'awaiting_signatures') signaturesPending++;
-      if (doc.aiAnalysis) aiAnalyzed++;
     });
     return [
       { label: "Total Documents", value: legalDocuments.length.toString(), icon: FileText },
       { label: "Notarized", value: notarized.toString(), icon: Shield },
       { label: "Signatures Pending", value: signaturesPending.toString(), icon: PenTool },
-      { label: "AI Analyzed", value: aiAnalyzed.toString(), icon: Brain },
     ];
   }, [legalDocuments]);
 
@@ -470,19 +464,6 @@ export default function LegalPage() {
     startSignatureBatch(selectedDocsWithFileId);
   };
 
-  const handleOpenZKMLModal = () => {
-    if (!selectedDocsWithFileId.length) {
-      toast.error('Select a document to analyze.');
-      return;
-    }
-    if (selectedDocsWithFileId.length > 1) {
-      toast.error('Please select only one document for AI analysis.');
-      return;
-    }
-    setAnalysisDocument(selectedDocsWithFileId[0]);
-    setShowZKMLModal(true);
-  };
-
   const handleNotarizeSuccess = () => {
     setShowNotarizeModal(false);
     refreshDocuments();
@@ -534,7 +515,7 @@ export default function LegalPage() {
                 </p>
                 <h1 className="text-3xl font-semibold">Legal Workflows</h1>
                 <p className="text-sm text-muted-foreground mt-2">
-                  Notarization, signatures, redaction, and AI analysis
+                  Notarization, signatures and redaction
                 </p>
               </div>
               {selectedCount > 0 && (
@@ -675,10 +656,6 @@ export default function LegalPage() {
           <TabsTrigger value="sent-signatures" className="gap-2">
             <PenTool className="h-4 w-4" />
             Sent Requests
-          </TabsTrigger>
-          <TabsTrigger value="analysis" className="gap-2">
-            <Brain className="h-4 w-4" />
-            AI Analysis
           </TabsTrigger>
         </TabsList>
 
@@ -894,21 +871,6 @@ export default function LegalPage() {
           <SentSignatureRequests />
         </TabsContent>
 
-        <TabsContent value="analysis" className="mt-4">
-          <Card className="p-12 text-center">
-            <Brain className="h-16 w-16 mx-auto mb-4 text-muted-foreground" />
-            <h3 className="text-lg font-semibold mb-2">AI Document Analysis</h3>
-            <p className="text-sm text-muted-foreground mb-4">
-              Analyze documents with ZKML for classification and insights
-            </p>
-            {canPerformAction('canRunZKMLAnalysis') && (
-              <Button onClick={handleOpenZKMLModal}>
-                <Brain className="h-4 w-4 mr-2" />
-                Analyze Document
-              </Button>
-            )}
-          </Card>
-        </TabsContent>
       </Tabs>
 
       {/* Modals */}
@@ -947,17 +909,6 @@ export default function LegalPage() {
           onClose={handleSignatureClose}
           onSuccess={handleSignatureSuccess}
           document={currentSignatureDocument}
-        />
-      )}
-
-      {showZKMLModal && analysisDocument?.file_id && (
-        <ZKMLAnalysisModal
-          onClose={() => {
-            setShowZKMLModal(false);
-            setAnalysisDocument(null);
-            refreshDocuments();
-          }}
-          document={analysisDocument}
         />
       )}
 
@@ -1021,21 +972,6 @@ export default function LegalPage() {
             >
               <PenTool className="h-4 w-4" />
               Request Signatures
-            </Button>
-            <Button
-              className="w-full justify-start gap-2"
-              onClick={() => {
-                if (!actionDoc) return;
-                setAnalysisDocument(actionDoc);
-                setShowZKMLModal(true);
-                setActionDoc(null);
-              }}
-              disabled={
-                !actionDoc?.file_id || !canPerformAction('canRunZKMLAnalysis')
-              }
-            >
-              <Brain className="h-4 w-4" />
-              Analyze with ZKML
             </Button>
             <Button
               variant="destructive"

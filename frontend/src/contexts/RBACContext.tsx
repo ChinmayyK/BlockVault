@@ -153,7 +153,6 @@ export const RBACProvider: React.FC<RBACProviderProps> = ({ children }) => {
       'canRequestSignatures': 'canRequestSignatures',
       'fund_escrow': 'canFundEscrow',
       'canSignDocuments': 'canSignDocuments',
-      'canRunZKMLAnalysis': 'canRunZKMLAnalysis',
     };
     
     const permission = actionPermissionMap[action];

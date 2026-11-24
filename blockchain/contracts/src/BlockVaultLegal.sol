@@ -8,7 +8,7 @@ import "@openzeppelin/contracts/security/Pausable.sol";
 /**
  * @title BlockVaultLegal
  * @dev Smart contract for legal document management with ZK proofs
- * @notice This contract handles document notarization, ZKPT redaction, e-signatures, and ZKML analysis
+ * @notice This contract handles document notarization, ZKPT redaction and e-signatures
  * @custom:security-contact security@blockvault.com
  */
 contract BlockVaultLegal is Ownable, ReentrancyGuard, Pausable {
@@ -57,7 +57,6 @@ contract BlockVaultLegal is Ownable, ReentrancyGuard, Pausable {
     // ZK Verifiers
     address public integrityVerifier;
     address public zkptVerifier;
-    address public zkmlVerifier;
     
     // ============ EVENTS ============
     
@@ -68,8 +67,7 @@ contract BlockVaultLegal is Ownable, ReentrancyGuard, Pausable {
     event SignatureRequested(bytes32 indexed docHash, address[] signers, uint256 deadline, uint256 escrowAmount);
     event DocumentSigned(bytes32 indexed docHash, address indexed signer);
     event ContractExecuted(bytes32 indexed docHash, address indexed recipient, uint256 amount);
-    event MLInferenceVerified(bytes32 indexed docHash, int256 result);
-    event VerifiersUpdated(address integrityVerifier, address zkptVerifier, address zkmlVerifier);
+    event VerifiersUpdated(address integrityVerifier, address zkptVerifier);
     event DocumentRevoked(bytes32 indexed docHash, address indexed owner);
     event EscrowRefunded(bytes32 indexed docHash, address indexed owner, uint256 amount);
     event SignatureRequestCancelled(bytes32 indexed docHash, address indexed owner);
@@ -97,15 +95,13 @@ contract BlockVaultLegal is Ownable, ReentrancyGuard, Pausable {
     
     constructor(
         address _integrityVerifier,
-        address _zkptVerifier,
-        address _zkmlVerifier
+        address _zkptVerifier
     ) {
-        if (_integrityVerifier == address(0) || _zkptVerifier == address(0) || _zkmlVerifier == address(0)) {
+        if (_integrityVerifier == address(0) || _zkptVerifier == address(0)) {
             revert InvalidAddress();
         }
         integrityVerifier = _integrityVerifier;
         zkptVerifier = _zkptVerifier;
-        zkmlVerifier = _zkmlVerifier;
     }
     
     // ============ MODIFIERS ============
@@ -397,34 +393,6 @@ contract BlockVaultLegal is Ownable, ReentrancyGuard, Pausable {
         emit DocumentRevoked(_docHash, msg.sender);
     }
     
-    /**
-     * @dev Verifies a ZKML proof that a specific AI model was run on a document
-     * @param _docHash The hash of the document
-     * @param a The ZKML proof's 'a' component
-     * @param b The ZKML proof's 'b' component
-     * @param c The ZKML proof's 'c' component
-     * @param publicInputs The public inputs containing model parameters and result
-     */
-    function verifyMLInference(
-        bytes32 _docHash,
-        uint[2] calldata a,
-        uint[2][2] calldata b,
-        uint[2] calldata c,
-        uint[3] calldata publicInputs
-    ) external whenNotPaused documentExists(_docHash) {
-        uint[] memory dynPublicInputs = new uint[](3);
-        dynPublicInputs[0] = publicInputs[0];
-        dynPublicInputs[1] = publicInputs[1];
-        dynPublicInputs[2] = publicInputs[2];
-        
-        // Verify the ZKML proof
-        if (!_verifyZKProof(zkmlVerifier, a, b, c, dynPublicInputs)) {
-            revert InvalidProof();
-        }
-        
-        emit MLInferenceVerified(_docHash, int256(publicInputs[2]));
-    }
-    
     // ============ VIEW FUNCTIONS ============
     
     /**
@@ -543,22 +511,19 @@ contract BlockVaultLegal is Ownable, ReentrancyGuard, Pausable {
      * @dev Updates the verifier contract addresses
      * @param _integrityVerifier New integrity verifier address
      * @param _zkptVerifier New ZKPT verifier address
-     * @param _zkmlVerifier New ZKML verifier address
      */
     function updateVerifiers(
         address _integrityVerifier,
-        address _zkptVerifier,
-        address _zkmlVerifier
+        address _zkptVerifier
     ) external onlyOwner {
-        if (_integrityVerifier == address(0) || _zkptVerifier == address(0) || _zkmlVerifier == address(0)) {
+        if (_integrityVerifier == address(0) || _zkptVerifier == address(0)) {
             revert InvalidAddress();
         }
         
         integrityVerifier = _integrityVerifier;
         zkptVerifier = _zkptVerifier;
-        zkmlVerifier = _zkmlVerifier;
         
-        emit VerifiersUpdated(_integrityVerifier, _zkptVerifier, _zkmlVerifier);
+        emit VerifiersUpdated(_integrityVerifier, _zkptVerifier);
     }
     
     /**

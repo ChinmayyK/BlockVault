@@ -24,7 +24,6 @@ export const env = {
   walletConnectProjectId: import.meta.env.VITE_WALLETCONNECT_PROJECT_ID || '',
 
   // Feature Flags
-  enableZKML: import.meta.env.VITE_ENABLE_ZKML !== 'false',
   enableRedaction: import.meta.env.VITE_ENABLE_REDACTION !== 'false',
   enableSignatures: import.meta.env.VITE_ENABLE_SIGNATURES !== 'false',
 

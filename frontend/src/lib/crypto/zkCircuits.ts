@@ -138,39 +138,6 @@ export class ZKCircuitManager {
   }
 
   /**
-   * Generate ZKML proof for AI inference
-   * @param inputData The input data for the model
-   * @param modelParams The model parameters
-   * @param expectedOutput The expected output
-   * @returns ZK proof and public signals
-   */
-  async generateZKMLProof(
-    inputData: number,
-    modelParams: { m: number; b: number },
-    expectedOutput: number
-  ): Promise<{proof: ZKProof, publicSignals: string[]}> {
-    try {
-      const circuitInputs = {
-        x: inputData.toString(),
-        m: modelParams.m.toString(),
-        b: modelParams.b.toString(),
-        y: expectedOutput.toString()
-      };
-
-      const { proof, publicSignals } = await groth16.fullProve(
-        circuitInputs,
-        '/circuits/ml_inference.wasm',
-        '/circuits/ml_inference_final.zkey'
-      );
-
-      return { proof, publicSignals };
-    } catch (error) {
-      console.error('Error generating ZKML proof:', error);
-      throw new Error('Failed to generate ZKML proof');
-    }
-  }
-
-  /**
    * Format proof for smart contract call
    * @param proof The ZK proof
    * @param publicSignals The public signals
@@ -289,37 +256,6 @@ export class DocumentTransformer {
       timestamp: Date.now(),
       verifiable: true
     };
-  }
-}
-
-/**
- * AI Model Utilities for ZKML
- */
-export class AIModelManager {
-  /**
-   * Run a toy linear regression model
-   * @param input The input value
-   * @param modelParams The model parameters
-   * @returns The model output
-   */
-  static runToyLinearModel(input: number, modelParams: { m: number; b: number }): number {
-    return modelParams.m * input + modelParams.b;
-  }
-
-  /**
-   * Verify model execution with ZK proof
-   * @param input The input value
-   * @param modelParams The model parameters
-   * @param expectedOutput The expected output
-   * @returns Verification result
-   */
-  static verifyModelExecution(
-    input: number,
-    modelParams: { m: number; b: number },
-    expectedOutput: number
-  ): boolean {
-    const actualOutput = this.runToyLinearModel(input, modelParams);
-    return Math.abs(actualOutput - expectedOutput) < 0.001; // Allow for small floating point errors
   }
 }
 

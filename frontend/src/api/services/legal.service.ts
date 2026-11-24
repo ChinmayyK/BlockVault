@@ -55,17 +55,6 @@ export const legalService = {
   },
 
   /**
-   * Analyze document with ZKML
-   */
-  async analyzeDocument(data: {
-    fileId: string;
-    analysisType: string;
-  }) {
-    const response = await apiClient.post(API_ENDPOINTS.LEGAL.ANALYZE, data);
-    return response.data;
-  },
-
-  /**
    * Revoke document access
    */
   async revokeAccess(documentId: string, userAddress: string) {

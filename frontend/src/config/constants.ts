@@ -42,7 +42,6 @@ export const API_ENDPOINTS = {
   LEGAL: {
     NOTARIZE: '/legal/notarize',
     SIGN: '/legal/sign',
-    ANALYZE: '/legal/analyze',
   },
 } as const;
 

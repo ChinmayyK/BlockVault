@@ -3,7 +3,6 @@ import { Upload, FileText, Shield, AlertCircle, CheckCircle, X, Loader2 } from '
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { useAuth } from '@/contexts/AuthContext';
-import { ZKCircuitManager } from '@/lib/crypto/zkCircuitManager';
 import toast from 'react-hot-toast';
 import { getApiBase as resolveApiBase } from '@/lib/getApiBase';
 import { readStoredUser } from '@/utils/authStorage';
@@ -28,7 +27,6 @@ export const CaseDocumentUploadModal: React.FC<CaseDocumentUploadModalProps> = (
   const [progress, setProgress] = useState(0);
   const [documentHash, setDocumentHash] = useState<string>('');
   const [ipfsCid, setIpfsCid] = useState<string>('');
-  const [zkProof, setZkProof] = useState<any>(null);
 
   const API_BASE = resolveApiBase();
 
@@ -69,29 +67,15 @@ export const CaseDocumentUploadModal: React.FC<CaseDocumentUploadModalProps> = (
       setDocumentHash(fileHash);
       setProgress(25);
 
-      // Step 2b: Apply lossless compression (simulated for demo)
-      const compressedFile = await compressFile(selectedFile);
       setProgress(50);
 
-      // Step 2c: Generate ZK Proof of Integrity
-      const zkManager = new ZKCircuitManager();
-      const { proof, publicSignals } = await zkManager.generateProof({
-        originalHash: fileHash,
-        compressedHash: '0x' + hashHex, // In real implementation, hash the compressed file
-        timestamp: Date.now(),
-        caseId: caseId
-      });
-      setZkProof({ proof, publicSignals });
-      console.log('ZK Proof generated:', { proof, publicSignals });
-      setProgress(75);
-
-      // Step 2d: Upload compressed file to IPFS
-      const cid = await uploadToIpfs(compressedFile);
+      // Step 2b: Upload the file to IPFS
+      const cid = await uploadToIpfs(selectedFile);
       setIpfsCid(cid);
       setProgress(100);
 
       setStep('notarizing');
-      await notarizeDocument(fileHash, cid, { proof, publicSignals });
+      await notarizeDocument(fileHash, cid);
 
     } catch (error) {
       console.error('Error processing document:', error);
@@ -100,13 +84,6 @@ export const CaseDocumentUploadModal: React.FC<CaseDocumentUploadModalProps> = (
     } finally {
       setLoading(false);
     }
-  };
-
-  // Simulate file compression
-  const compressFile = async (file: File): Promise<File> => {
-    // In a real implementation, this would use actual compression
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    return file; // Return original file for demo
   };
 
   // Upload to IPFS
@@ -128,16 +105,9 @@ export const CaseDocumentUploadModal: React.FC<CaseDocumentUploadModalProps> = (
     return data.cid;
   };
 
-  // Step 3: Notarize on Blockchain
-  const notarizeDocument = async (hash: string, cid: string, proof: any) => {
+  // Step 3: Record the document, its fingerprint and IPFS address, with the case
+  const notarizeDocument = async (hash: string, cid: string) => {
     try {
-      // Format proof for smart contract
-      const zkManager = new ZKCircuitManager();
-      const formattedProof = await zkManager.formatProofForContract(proof.proof, proof.publicSignals);
-
-      // Call smart contract to register document
-      await registerDocumentOnChain(caseId, hash, cid, formattedProof);
-
       // Add document to case in backend
       await addDocumentToCase(caseId, {
         name: selectedFile!.name,
@@ -147,7 +117,6 @@ export const CaseDocumentUploadModal: React.FC<CaseDocumentUploadModalProps> = (
         type: selectedFile!.type,
         uploadedAt: new Date().toISOString(),
         uploadedBy: user?.address || '',
-        zkProof: formattedProof
       });
 
       // Also add to main legal documents list
@@ -160,9 +129,7 @@ export const CaseDocumentUploadModal: React.FC<CaseDocumentUploadModalProps> = (
         status: 'registered' as const,
         timestamp: Date.now(),
         owner: user?.address || 'current-user',
-        blockchainHash: hash,
         ipfsCid: cid,
-        zkProof: formattedProof,
         caseId: caseId // Link to the case
       };
 
@@ -175,21 +142,14 @@ export const CaseDocumentUploadModal: React.FC<CaseDocumentUploadModalProps> = (
       window.dispatchEvent(new CustomEvent('legalDocumentsUpdated'));
 
       setStep('complete');
-      toast.success('Document successfully notarized and added to case!');
+      toast.success('Document fingerprinted and added to the case.');
       onSuccess();
 
     } catch (error) {
       console.error('Error notarizing document:', error);
-      toast.error('Failed to notarize document');
+      toast.error('Failed to add the document to the case');
       setStep('upload');
     }
-  };
-
-  // Register document on blockchain
-  const registerDocumentOnChain = async (caseId: string, hash: string, cid: string, proof: any) => {
-    // In a real implementation, this would call the smart contract
-    console.log('Registering document on blockchain:', { caseId, hash, cid, proof });
-    await new Promise(resolve => setTimeout(resolve, 2000)); // Simulate blockchain transaction
   };
 
   // Add document to case in backend
@@ -272,10 +232,10 @@ export const CaseDocumentUploadModal: React.FC<CaseDocumentUploadModalProps> = (
               <div className="flex items-start space-x-3">
                 <AlertCircle className="w-5 h-5 text-amber-400 mt-0.5" />
                 <div>
-                  <h4 className="font-medium text-amber-400 mb-1">Document Notarization Process</h4>
+                  <h4 className="font-medium text-amber-400 mb-1">What happens to this document</h4>
                   <p className="text-sm text-amber-200">
-                    This document will be cryptographically hashed, compressed, and notarized on the blockchain. 
-                    This creates an immutable, verifiable record of the document's integrity and existence.
+                    Its SHA-256 fingerprint is calculated in your browser, the file is uploaded to IPFS, and both are
+                    recorded with the case, so anyone can later check that the file hasn&apos;t changed.
                   </p>
                 </div>
               </div>
@@ -290,7 +250,7 @@ export const CaseDocumentUploadModal: React.FC<CaseDocumentUploadModalProps> = (
               <Loader2 className="w-12 h-12 text-blue-500 mx-auto mb-4 animate-spin" />
               <h3 className="text-lg font-medium text-white mb-2">Processing Document</h3>
               <p className="text-slate-400 mb-4">
-                Applying cryptographic processing and compression...
+                Fingerprinting and uploading...
               </p>
               
               <div className="w-full bg-slate-700 rounded-full h-2 mb-4">
@@ -309,14 +269,6 @@ export const CaseDocumentUploadModal: React.FC<CaseDocumentUploadModalProps> = (
               </div>
               <div className="flex items-center space-x-3 p-3 bg-slate-800/50 rounded-lg">
                 <CheckCircle className="w-5 h-5 text-green-500" />
-                <span className="text-sm text-white">Applied lossless compression</span>
-              </div>
-              <div className="flex items-center space-x-3 p-3 bg-slate-800/50 rounded-lg">
-                <CheckCircle className="w-5 h-5 text-green-500" />
-                <span className="text-sm text-white">Generated ZK proof of integrity</span>
-              </div>
-              <div className="flex items-center space-x-3 p-3 bg-slate-800/50 rounded-lg">
-                <CheckCircle className="w-5 h-5 text-green-500" />
                 <span className="text-sm text-white">Uploaded to IPFS</span>
               </div>
             </div>
@@ -328,9 +280,9 @@ export const CaseDocumentUploadModal: React.FC<CaseDocumentUploadModalProps> = (
           <div className="space-y-6">
             <div className="text-center">
               <Shield className="w-12 h-12 text-green-500 mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-white mb-2">Notarizing on Blockchain</h3>
+              <h3 className="text-lg font-medium text-white mb-2">Adding to the case</h3>
               <p className="text-slate-400 mb-4">
-                Registering document with cryptographic proof...
+                Recording the fingerprint and IPFS address with the case...
               </p>
             </div>
 
@@ -345,12 +297,6 @@ export const CaseDocumentUploadModal: React.FC<CaseDocumentUploadModalProps> = (
                   <span className="text-slate-400">IPFS CID:</span>
                   <span className="text-white font-mono">{ipfsCid.slice(0, 10)}...</span>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-400">ZK Proof:</span>
-                  <span className="text-green-400">
-                    ✓ Generated {zkProof ? '(Ready)' : '(Processing...)'}
-                  </span>
-                </div>
               </div>
             </div>
           </div>
@@ -360,13 +306,13 @@ export const CaseDocumentUploadModal: React.FC<CaseDocumentUploadModalProps> = (
         {step === 'complete' && (
           <div className="text-center py-8">
             <CheckCircle className="w-16 h-16 text-green-500 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-white mb-2">Document Notarized!</h3>
+            <h3 className="text-lg font-medium text-white mb-2">Document added</h3>
             <p className="text-slate-400 mb-4">
-              The document has been successfully added to the case with full cryptographic verification.
+              The document was added to the case with its fingerprint and IPFS address.
             </p>
             <div className="bg-green-500/10 border border-green-500/20 rounded-lg p-4">
               <p className="text-sm text-green-300">
-                This document now has a verifiable chain of custody and can be used as evidence.
+                Comparing a file&apos;s SHA-256 with this fingerprint shows whether it has changed since.
               </p>
             </div>
           </div>
@@ -384,7 +330,7 @@ export const CaseDocumentUploadModal: React.FC<CaseDocumentUploadModalProps> = (
                 disabled={!selectedFile || loading}
                 className="bg-blue-600 hover:bg-blue-700"
               >
-                {loading ? 'Processing...' : 'Notarize Document'}
+                {loading ? 'Processing...' : 'Add Document'}
               </Button>
             </>
           )}

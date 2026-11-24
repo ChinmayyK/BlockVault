@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   FileText,
   Shield,
@@ -16,7 +16,6 @@ import { storeLegalDocumentKey } from '@/utils/legalDocumentKeys';
 import toast from 'react-hot-toast';
 import { LegalModalFrame } from './LegalModalFrame';
 import { fetchWithTimeout } from '@/utils/fetchWithTimeout';
-import NotarizationWorker from '@/workers/notarizationWorker?worker';
 import { logger } from '@/utils/logger';
 import { getApiBase } from '@/lib/getApiBase';
 import { readStoredUser } from '@/utils/authStorage';
@@ -35,111 +34,9 @@ export const NotarizeDocumentModal: React.FC<NotarizeDocumentModalProps> = ({ on
   const [loading, setLoading] = useState(false);
   const [dragActive, setDragActive] = useState(false);
   const [processingProgress, setProcessingProgress] = useState(0);
-  const [verifyingProgress, setVerifyingProgress] = useState(0);
-  const [step, setStep] = useState<'upload' | 'processing' | 'verifying' | 'complete'>('upload');
+  const [step, setStep] = useState<'upload' | 'processing' | 'complete'>('upload');
   const [documentHash, setDocumentHash] = useState<string>('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-
-  type WorkerProofPayload = {
-    fileHash: string;
-    proof: any;
-    publicSignals: string[];
-    formattedProof: any;
-  };
-
-  type NotarizationWorkerMessage =
-    | { id: string; status: 'success'; payload: WorkerProofPayload }
-    | { id: string; status: 'error'; message?: string; stack?: string };
-
-  const notarizationWorkerRef = useRef<Worker | null>(null);
-  const notarizationRequestsRef = useRef<Map<string, { resolve: (payload: WorkerProofPayload) => void; reject: (error: Error) => void }>>(new Map());
-
-  const generateWorkerRequestId = () => {
-    if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
-      return crypto.randomUUID();
-    }
-    return `notarize-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  };
-
-  const ensureNotarizationWorker = useCallback(() => {
-    if (typeof window === 'undefined' || typeof Worker === 'undefined') {
-      return null;
-    }
-
-    if (!notarizationWorkerRef.current) {
-      const worker = new NotarizationWorker();
-      worker.onmessage = (event: MessageEvent<NotarizationWorkerMessage>) => {
-        const message = event.data;
-        const callbacks = notarizationRequestsRef.current.get(message.id);
-        if (!callbacks) {
-          return;
-        }
-        notarizationRequestsRef.current.delete(message.id);
-        if (message.status === 'success' && message.payload) {
-          callbacks.resolve(message.payload);
-        } else {
-          callbacks.reject(new Error(message.message || 'Notarization worker failed'));
-        }
-      };
-      worker.onerror = (event) => {
-        logger.error('Notarization worker crashed', event);
-        notarizationRequestsRef.current.forEach(({ reject }) =>
-          reject(new Error('Notarization worker crashed'))
-        );
-        notarizationRequestsRef.current.clear();
-        worker.terminate();
-        notarizationWorkerRef.current = null;
-      };
-      notarizationWorkerRef.current = worker;
-    }
-    return notarizationWorkerRef.current;
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      notarizationWorkerRef.current?.terminate();
-      notarizationWorkerRef.current = null;
-      notarizationRequestsRef.current.clear();
-    };
-  }, []);
-
-  const runProofPipeline = useCallback(
-    async (file: File) => {
-      const worker = ensureNotarizationWorker();
-      if (!worker) {
-        const { ZKCircuitManager } = await import('@/lib/crypto/zkCircuits');
-        const fileData = new Uint8Array(await file.arrayBuffer());
-        const zkManager = ZKCircuitManager.getInstance();
-        const fileHash = await zkManager.poseidonHash(fileData);
-        const { proof, publicSignals } = await zkManager.generateIntegrityProof(fileData, fileHash);
-        const formattedProof = await zkManager.formatProofForContract(proof, publicSignals);
-        return { fileHash, proof, publicSignals, formattedProof };
-      }
-
-      const sendPayload = (payload: { file?: File; fileBuffer?: ArrayBuffer }, transfer: Transferable[] = []) =>
-        new Promise<WorkerProofPayload>((resolve, reject) => {
-          const requestId = generateWorkerRequestId();
-          notarizationRequestsRef.current.set(requestId, { resolve, reject });
-          try {
-            worker.postMessage({ id: requestId, ...payload }, transfer);
-          } catch (postError) {
-            notarizationRequestsRef.current.delete(requestId);
-            reject(postError as Error);
-          }
-        });
-
-      try {
-        return await sendPayload({ file });
-      } catch (err: any) {
-        if (err?.name !== 'DataCloneError') {
-          throw err;
-        }
-        const buffer = await file.arrayBuffer();
-        return sendPayload({ fileBuffer: buffer }, [buffer]);
-      }
-    },
-    [ensureNotarizationWorker]
-  );
 
   const getAuthHeaders = () => {
     const user = readStoredUser() || {};
@@ -198,30 +95,10 @@ export const NotarizeDocumentModal: React.FC<NotarizeDocumentModalProps> = ({ on
       return () => window.clearInterval(interval);
     }
 
-    if (step === 'verifying' || step === 'complete') {
+    if (step === 'complete') {
       setProcessingProgress(100);
     } else {
       setProcessingProgress(0);
-    }
-  }, [step]);
-
-  useEffect(() => {
-    if (step === 'verifying') {
-      setVerifyingProgress(35);
-      const interval = window.setInterval(() => {
-        setVerifyingProgress((prev) => {
-          if (prev >= 92) return prev;
-          return Math.min(prev + 5 + Math.random() * 5, 92);
-        });
-      }, 380);
-
-      return () => window.clearInterval(interval);
-    }
-
-    if (step === 'complete') {
-      setVerifyingProgress(100);
-    } else {
-      setVerifyingProgress(0);
     }
   }, [step]);
 
@@ -295,15 +172,9 @@ export const NotarizeDocumentModal: React.FC<NotarizeDocumentModalProps> = ({ on
       storeLegalDocumentKey(fileId, passphrase);
       console.log('🔐 Encryption key stored for:', fileId);
 
-      // Step 4-6: Run hashing + proof generation inside worker
-      setStep('verifying');
-      const { fileHash, formattedProof } = await runProofPipeline(selectedFile);
-      setDocumentHash(fileHash);
-
-      // Step 7: Register on blockchain (using backend CID if available)
-      const cidForChain = backendCid || await uploadToIpfs(selectedFile);
-      await registerDocumentOnChain(cidForChain, formattedProof);
-
+      // The backend pins the file to IPFS in the background and anchors its fingerprint
+      // on chain in the next Merkle batch; nothing more happens in the browser.
+      setDocumentHash(sha256);
       setStep('complete');
       
       // Step 8: Add to legal documents list with REAL file_id
@@ -313,13 +184,12 @@ export const NotarizeDocumentModal: React.FC<NotarizeDocumentModalProps> = ({ on
         file_id: fileId, // Use real backend file ID
         name: selectedFile.name,
         docHash: sha256, // Use backend SHA256 hash
-        cid: cidForChain,
+        cid: backendCid || null,
         status: 'registered' as const,
         timestamp: Date.now(),
         owner: user.address || 'current-user',
-        blockchainHash: fileHash,
-        ipfsCid: cidForChain,
-        zkProof: formattedProof
+        ipfsCid: backendCid || null,
+        anchorStatus: uploadData.anchor_status || 'pending',
       };
       
       // Store in localStorage
@@ -330,7 +200,7 @@ export const NotarizeDocumentModal: React.FC<NotarizeDocumentModalProps> = ({ on
       // Dispatch event to refresh documents
       window.dispatchEvent(new CustomEvent('legalDocumentsUpdated'));
       
-      toast.success('Document uploaded, encrypted, and notarized successfully!');
+      toast.success('Document encrypted and stored. Its fingerprint is queued for anchoring.');
       onSuccess();
 
     } catch (error) {
@@ -350,26 +220,10 @@ export const NotarizeDocumentModal: React.FC<NotarizeDocumentModalProps> = ({ on
   }, [errorMessage]);
 
 
-  // Upload file to IPFS
-  const uploadToIpfs = async (file: File): Promise<string> => {
-    // Fast simulation for demos (instant instead of 1 second)
-    await new Promise(resolve => setTimeout(resolve, 50));
-    console.log(`⚡ IPFS upload (fast mock): ${file.name}`);
-    return `Qm${Math.random().toString(36).substring(2, 15)}`;
-  };
-
-  // Register document on blockchain
-  const registerDocumentOnChain = async (cid: string, proof: any) => {
-    // Fast simulation for demos (instant instead of 2 seconds)
-    await new Promise(resolve => setTimeout(resolve, 100));
-    console.log('⚡ Document registered on chain (fast mock):', { cid });
-  };
-
   const stepConfig = useMemo(
     () => [
       { id: 'upload', label: 'Upload', description: 'Prepare your document' },
       { id: 'processing', label: 'Hash', description: 'Encrypt & fingerprint' },
-      { id: 'verifying', label: 'Verify', description: 'Generate proof' },
     ],
     []
   );
@@ -493,7 +347,7 @@ export const NotarizeDocumentModal: React.FC<NotarizeDocumentModalProps> = ({ on
             </div>
             <h3 className="mb-2 text-lg font-semibold text-white">Select Document to Notarize</h3>
             <p className="mx-auto mb-6 max-w-md text-sm text-white/60">
-              Upload your legal document to generate an immutable blockchain fingerprint and proof of authenticity.
+              Upload your legal document. It is encrypted and stored, and its fingerprint is anchored on chain.
               </p>
               <input
                 type="file"
@@ -626,33 +480,6 @@ export const NotarizeDocumentModal: React.FC<NotarizeDocumentModalProps> = ({ on
           </div>
         )}
 
-        {step === 'verifying' && (
-          <div className="text-center py-8">
-            <div className="w-16 h-16 bg-white/10 rounded-full flex items-center justify-center mx-auto mb-4 border border-white/20">
-              <div className="w-8 h-8 border-2 border-accent-blue border-t-transparent rounded-full animate-spin" />
-            </div>
-            <h3 className="text-lg font-medium text-white mb-2">Generating ZK Proof</h3>
-          <p className="text-white/60">Creating cryptographic proof of document integrity...</p>
-            {documentHash && (
-              <div className="mt-4 p-3 bg-white/5 border border-white/10 rounded-lg">
-                <p className="text-xs text-white/60 mb-1">Document Hash:</p>
-                <p className="text-xs font-mono text-white break-all">{documentHash}</p>
-              </div>
-            )}
-          <div className="mt-6 space-y-3 max-w-md mx-auto text-left">
-            <div className="flex items-center justify-between text-xs text-white/60">
-              <span>Generating zero-knowledge proof</span>
-              <span className="font-mono text-white/80">{Math.round(verifyingProgress)}%</span>
-            </div>
-            <Progress
-              value={verifyingProgress}
-              className="h-2.5 overflow-hidden rounded-full bg-white/10"
-              indicatorClassName="bg-accent-blue shadow-[0_0_18px_hsl(var(--accent-blue-glow))] transition-all duration-500"
-            />
-          </div>
-          </div>
-        )}
-
         {step === 'complete' && (
           <div className="text-center py-8">
           <div className="relative mx-auto mb-5 flex h-20 w-20 items-center justify-center">
@@ -662,7 +489,7 @@ export const NotarizeDocumentModal: React.FC<NotarizeDocumentModalProps> = ({ on
           </div>
             <h3 className="text-lg font-medium text-white mb-2">Document Notarized!</h3>
             <p className="text-white/60 mb-4">
-              Your document has been successfully registered on the blockchain with cryptographic proof.
+              Your document is encrypted and stored. Its fingerprint is pinned to IPFS and anchored on chain in the next batch.
             </p>
 
             {documentHash && (

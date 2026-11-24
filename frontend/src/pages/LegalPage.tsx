@@ -139,7 +139,7 @@ export default function LegalPage() {
   const stats = useMemo(() => {
     let notarized = 0, signaturesPending = 0;
     legalDocuments.forEach(doc => {
-      if (doc.blockchainHash) notarized++;
+      if (doc.docHash) notarized++;
       if (doc.status === 'awaiting_signatures') signaturesPending++;
     });
     return [
@@ -805,10 +805,10 @@ export default function LegalPage() {
                       </div>
                     </div>
                   </div>
-                  {doc.blockchainHash && (
+                  {doc.docHash && (
                     <div className="flex items-center gap-1 text-xs text-green-500">
                       <Shield className="h-3 w-3" />
-                      <span>Blockchain Verified</span>
+                      <span>{doc.anchorStatus === 'complete' ? 'Anchored on chain' : 'Fingerprint recorded'}</span>
                     </div>
                   )}
                   <div className="mt-4 flex items-center gap-2">

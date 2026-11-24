@@ -112,52 +112,5 @@ export class ZKCircuitManager {
       ]
     };
   }
-
-  // Generate proof of AI analysis (ZKML)
-  async generateMLProof(inputs: {
-    documentHash: string;
-    modelHash: string;
-    result: number;
-    confidence: number;
-    timestamp: number;
-  }): Promise<{ proof: any; publicSignals: any }> {
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    
-    return {
-      proof: {
-        pi_a: [
-          "0x9012345678f1234567890abcdef1234567890123456",
-          "0x34567890abcdef1234567890abcdef123456789012",
-          "0x1"
-        ],
-        pi_b: [
-          [
-            "0x0123456789f1234567890abcdef12345678901234567",
-            "0x4567890abcdef1234567890abcdef1234567890123"
-          ],
-          [
-            "0x1234567890f1234567890abcdef123456789012345678",
-            "0x567890abcdef1234567890abcdef12345678901234"
-          ],
-          [
-            "0x1",
-            "0x0"
-          ]
-        ],
-        pi_c: [
-          "0x2345678901f1234567890abcdef1234567890123456789",
-          "0x67890abcdef1234567890abcdef123456789012345",
-          "0x1"
-        ]
-      },
-      publicSignals: [
-        inputs.documentHash,
-        inputs.modelHash,
-        inputs.result.toString(),
-        inputs.confidence.toString(),
-        inputs.timestamp.toString()
-      ]
-    };
-  }
 }
 

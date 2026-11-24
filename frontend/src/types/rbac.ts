@@ -40,7 +40,6 @@ export interface CasePermissions {
   canSignDocuments: boolean;
   
   // AI Analysis
-  canRunZKMLAnalysis: boolean;
 }
 
 export interface RolePermissionMatrix {
@@ -79,7 +78,6 @@ export const ROLE_PERMISSIONS: RolePermissionMatrix = {
     canSignDocuments: true,
     
     // AI Analysis
-    canRunZKMLAnalysis: true,
   },
   
   associate: {
@@ -105,7 +103,6 @@ export const ROLE_PERMISSIONS: RolePermissionMatrix = {
     canSignDocuments: true,
     
     // AI Analysis
-    canRunZKMLAnalysis: true,
   },
   
   paralegal: {
@@ -131,7 +128,6 @@ export const ROLE_PERMISSIONS: RolePermissionMatrix = {
     canSignDocuments: true,
     
     // AI Analysis
-    canRunZKMLAnalysis: false,
   },
   
   client: {
@@ -157,7 +153,6 @@ export const ROLE_PERMISSIONS: RolePermissionMatrix = {
     canSignDocuments: true, // Can sign documents they're required to sign
     
     // AI Analysis
-    canRunZKMLAnalysis: false,
   },
   
   'external-counsel': {
@@ -183,7 +178,6 @@ export const ROLE_PERMISSIONS: RolePermissionMatrix = {
     canSignDocuments: true, // Can sign documents they're required to sign
     
     // AI Analysis
-    canRunZKMLAnalysis: false,
   },
 };
 
